@@ -22,14 +22,14 @@ type tracker struct {
 	ttl time.Time
 }
 
-type Reassemble struct {
+type Reassembler struct {
 	trackerPool sync.Pool
 	trackers    map[uint16]*tracker
 	provider    buf.BufferProvider
 }
 
-func NewReassemble(provider buf.BufferProvider) *Reassemble {
-	return &Reassemble{
+func NewReassemble(provider buf.BufferProvider) *Reassembler {
+	return &Reassembler{
 		trackerPool: sync.Pool{New: func() interface{} {
 			return &tracker{
 				List: list.New(),
@@ -41,7 +41,7 @@ func NewReassemble(provider buf.BufferProvider) *Reassemble {
 	}
 }
 
-func (r *Reassemble) InjectPacket(pkt packet.IPPacket) (packet.IPPacket, error) {
+func (r *Reassembler) InjectPacket(pkt packet.IPPacket) (packet.IPPacket, error) {
 	switch pkt := pkt.(type) {
 	case packet.IPv4Packet:
 		return r.injectIPv4Packet(pkt)
@@ -49,7 +49,7 @@ func (r *Reassemble) InjectPacket(pkt packet.IPPacket) (packet.IPPacket, error) 
 	return nil, nil
 }
 
-func (r *Reassemble) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, error) {
+func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, error) {
 	if pkt.FragmentOffset()&packet.IPv4MoreFragment == 0 && pkt.FragmentOffset() == 0 {
 		return pkt, nil
 	}
