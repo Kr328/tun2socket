@@ -16,6 +16,7 @@ const (
 type Allocator func(length int) []byte
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
 type UDPHandler func(payload []byte, endpoint *binding.Endpoint)
+type TunDevice = io.TunDevice
 
 type Tun2Socket struct {
 	initial sync.Once
@@ -23,7 +24,7 @@ type Tun2Socket struct {
 	closed  bool
 
 	bp      *bufferProvider
-	device  io.TunDevice
+	device  TunDevice
 	mtu     int
 	gateway net.IP
 	mirror  net.IP
@@ -47,7 +48,7 @@ type bufferProvider struct {
 	mergedPool   sync.Pool
 }
 
-func NewTun2Socket(device io.TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
+func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
 	return &Tun2Socket{
 		bp:        newBufferProvider(mtu),
 		device:    device,
