@@ -29,4 +29,6 @@ func (encoder *PacketEncoder) Encode(pkt packet.IPPacket) error {
 			return err
 		}
 	}
+
+	return nil
 }

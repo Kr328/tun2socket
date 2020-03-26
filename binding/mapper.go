@@ -83,3 +83,12 @@ func (mapper *Mapper) GenerateNonUsedPort() uint16 {
 		}
 	}
 }
+
+func (mapper *Mapper) Reset() {
+	mapper.lock.Lock()
+	defer mapper.lock.Unlock()
+
+	mapper.bindings.Init()
+	mapper.ports = map[uint16]*list.Element{}
+	mapper.endpoints = map[endpointKey]*list.Element{}
+}

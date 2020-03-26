@@ -113,7 +113,7 @@ func (pkt IPv4Packet) PacketLength() uint16 {
 }
 
 func (pkt IPv4Packet) SetPacketLength(length uint16) {
-	binary.BigEndian.PutUint16(pkt[4:], length)
+	binary.BigEndian.PutUint16(pkt[2:], length)
 }
 
 func (pkt IPv4Packet) Identification() uint16 {

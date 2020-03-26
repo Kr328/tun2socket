@@ -9,11 +9,11 @@ import (
 type TCPPacket []byte
 
 func (pkt TCPPacket) SourcePort() uint16 {
-	return int(binary.BigEndian.Uint16(pkt[0:]))
+	return binary.BigEndian.Uint16(pkt[0:])
 }
 
 func (pkt TCPPacket) TargetPort() uint16 {
-	return int(binary.BigEndian.Uint16(pkt[2:]))
+	return binary.BigEndian.Uint16(pkt[2:])
 }
 
 func (pkt TCPPacket) SetSourcePort(port uint16) {

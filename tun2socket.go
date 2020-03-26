@@ -14,8 +14,8 @@ const (
 )
 
 type Allocator func(length int) []byte
-type TCPConnectionHandler func(conn net.Conn, endpoint *binding.Endpoint)
-type UDPPacketHandler func(payload []byte, endpoint *binding.Endpoint)
+type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
+type UDPHandler func(payload []byte, endpoint *binding.Endpoint)
 
 type Tun2Socket struct {
 	initial sync.Once
@@ -36,8 +36,8 @@ type Tun2Socket struct {
 	tcpPort     uint16
 	udpPort     uint16
 
-	tcpHandler TCPConnectionHandler
-	udpHandler UDPPacketHandler
+	tcpHandler TCPHandler
+	udpHandler UDPHandler
 	allocator  Allocator
 }
 
@@ -47,13 +47,13 @@ type bufferProvider struct {
 	mergedPool   sync.Pool
 }
 
-func NewTun2Socket(device io.TunDevice, mtu int, gateway net.IP, mirror net.IP) *Tun2Socket {
+func NewTun2Socket(device io.TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
 	return &Tun2Socket{
 		bp:        newBufferProvider(mtu),
 		device:    device,
 		mtu:       mtu,
-		gateway:   gateway,
-		mirror:    mirror,
+		gateway:   gateway4,
+		mirror:    mirror4,
 		tcpMapper: binding.NewMapper(),
 		udpMapper: binding.NewMapper(),
 		tcpHandler: func(conn net.Conn, endpoint *binding.Endpoint) {
@@ -70,6 +70,8 @@ func NewTun2Socket(device io.TunDevice, mtu int, gateway net.IP, mirror net.IP) 
 func (t *Tun2Socket) Start() {
 	t.initial.Do(func() {
 		t.startTCPListener()
+		t.startUDPConn()
+		t.startRedirect()
 	})
 }
 
@@ -87,6 +89,18 @@ func (t *Tun2Socket) Stop() {
 
 		_ = t.device.SetDeadline(time.Unix(1, 0))
 	})
+}
+
+func (t *Tun2Socket) SetTCPHandler(handler TCPHandler) {
+	t.tcpHandler = handler
+}
+
+func (t *Tun2Socket) SetUDPHandler(handler UDPHandler) {
+	t.udpHandler = handler
+}
+
+func (t *Tun2Socket) SetAllocator(allocator Allocator) {
+	t.allocator = allocator
 }
 
 func (t *Tun2Socket) startTCPListener() {
@@ -123,6 +137,8 @@ func (t *Tun2Socket) startTCPListener() {
 
 				t.tcpHandler(conn, bind.Endpoint)
 			}
+
+			t.udpMapper.Reset()
 		}
 	}()
 }
@@ -161,6 +177,8 @@ func (t *Tun2Socket) startUDPConn() {
 
 				t.udpHandler(buf[:n], bind.Endpoint)
 			}
+
+			t.udpMapper.Reset()
 		}
 	}()
 }
@@ -178,8 +196,12 @@ func (t *Tun2Socket) startRedirect() {
 			}
 
 			switch pkt := tPkt.(type) {
-			case *packet.TCPPacket:
-				t.handleTCPPacket(ipPkt, pkt)
+			case packet.TCPPacket:
+				if !t.handleTCPPacket(ipPkt, pkt) {
+					continue
+				}
+			default:
+				continue
 			}
 
 			if encoder.Encode(ipPkt) != nil {
@@ -189,32 +211,47 @@ func (t *Tun2Socket) startRedirect() {
 	}()
 }
 
-func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt *packet.TCPPacket) {
-	ep := &binding.Endpoint{
-		Source: binding.Address{
-			IP:   ipPkt.SourceAddress(),
-			Port: tcpPkt.SourcePort(),
-		},
-		Target: binding.Address{
-			IP:   ipPkt.TargetAddress(),
-			Port: tcpPkt.TargetPort(),
-		},
-	}
+func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) bool {
+	if ipPkt.SourceAddress().Equal(t.gateway) && tcpPkt.SourcePort() == t.tcpPort {
+		port := tcpPkt.TargetPort()
+		bind := t.tcpMapper.GetBindingByPort(port)
+		if bind == nil {
+			return false
+		}
 
-	bind := t.tcpMapper.GetBindingByEndpoint(ep)
-	if bind == nil {
-		bind = t.tcpMapper.PutBinding(&binding.Binding{
-			Endpoint: ep,
-			Port:     t.tcpMapper.GenerateNonUsedPort(),
-		})
-	}
+		copy(ipPkt.SourceAddress(), bind.Endpoint.Target.IP)
+		copy(ipPkt.TargetAddress(), bind.Endpoint.Source.IP)
+		tcpPkt.SetSourcePort(bind.Endpoint.Target.Port)
+		tcpPkt.SetTargetPort(bind.Endpoint.Source.Port)
+	} else {
+		ep := &binding.Endpoint{
+			Source: binding.Address{
+				IP:   ipPkt.SourceAddress(),
+				Port: tcpPkt.SourcePort(),
+			},
+			Target: binding.Address{
+				IP:   ipPkt.TargetAddress(),
+				Port: tcpPkt.TargetPort(),
+			},
+		}
 
-	copy(ipPkt.SourceAddress(), t.mirror)
-	copy(ipPkt.TargetAddress(), t.gateway)
-	tcpPkt.SetSourcePort(bind.Port)
-	tcpPkt.SetTargetPort(t.tcpPort)
+		bind := t.tcpMapper.GetBindingByEndpoint(ep)
+		if bind == nil {
+			bind = t.tcpMapper.PutBinding(&binding.Binding{
+				Endpoint: ep,
+				Port:     t.tcpMapper.GenerateNonUsedPort(),
+			})
+		}
+
+		copy(ipPkt.SourceAddress(), t.mirror.To4())
+		copy(ipPkt.TargetAddress(), t.gateway.To4())
+		tcpPkt.SetSourcePort(bind.Port)
+		tcpPkt.SetTargetPort(t.tcpPort)
+	}
 
 	tcpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
+
+	return true
 }
 
 func newBufferProvider(mtu int) *bufferProvider {

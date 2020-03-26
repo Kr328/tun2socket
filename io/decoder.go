@@ -53,6 +53,8 @@ func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket,
 			decoder.provider.Recycle(pkt.BaseDataBlock())
 		}
 	}
+
+	return nil, nil, nil
 }
 
 func (decoder *PacketDecoder) readNext() (packet.IPPacket, error) {
