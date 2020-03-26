@@ -34,7 +34,7 @@ func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket,
 		pkt, err = decoder.reassembler.InjectPacket(pkt)
 		if err != nil {
 			if pkt != nil {
-				decoder.provider.Recycle(pkt.AsByteArray())
+				decoder.provider.Recycle(pkt.BaseDataBlock())
 			}
 			break
 		} else if pkt == nil {
@@ -45,12 +45,12 @@ func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket,
 		case packet.TCP:
 			tcpPkt := packet.TCPPacket(pkt.Payload())
 			if tcpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()) != nil {
-				decoder.provider.Recycle(pkt.AsByteArray())
+				decoder.provider.Recycle(pkt.BaseDataBlock())
 				break
 			}
 			return pkt, tcpPkt, nil
 		default:
-			decoder.provider.Recycle(pkt.AsByteArray())
+			decoder.provider.Recycle(pkt.BaseDataBlock())
 		}
 	}
 }

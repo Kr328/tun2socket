@@ -16,7 +16,7 @@ const (
 
 type IPv4Packet []byte
 
-func (pkt IPv4Packet) AsByteArray() []byte {
+func (pkt IPv4Packet) BaseDataBlock() []byte {
 	return pkt
 }
 

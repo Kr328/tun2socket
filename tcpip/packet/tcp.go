@@ -8,20 +8,20 @@ import (
 
 type TCPPacket []byte
 
-func (pkt TCPPacket) SourcePort() int {
+func (pkt TCPPacket) SourcePort() uint16 {
 	return int(binary.BigEndian.Uint16(pkt[0:]))
 }
 
-func (pkt TCPPacket) TargetPort() int {
+func (pkt TCPPacket) TargetPort() uint16 {
 	return int(binary.BigEndian.Uint16(pkt[2:]))
 }
 
 func (pkt TCPPacket) SetSourcePort(port uint16) {
-	binary.BigEndian.PutUint16(pkt[0:], uint16(port))
+	binary.BigEndian.PutUint16(pkt[0:], port)
 }
 
 func (pkt TCPPacket) SetTargetPort(port uint16) {
-	binary.BigEndian.PutUint16(pkt[2:], uint16(port))
+	binary.BigEndian.PutUint16(pkt[2:], port)
 }
 
 func (pkt TCPPacket) Verify(sourceAddress net.IP, targetAddress net.IP) error {
