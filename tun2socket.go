@@ -115,13 +115,13 @@ func (t *Tun2Socket) startTCPListener() {
 				}
 
 				rAddr := conn.RemoteAddr().(*net.TCPAddr)
-				binding := t.tcpMapper.GetEndpointByPort(uint16(rAddr.Port))
-				if binding == nil {
+				bind := t.tcpMapper.GetBindingByPort(uint16(rAddr.Port))
+				if bind == nil {
 					_ = conn.Close()
 					continue
 				}
 
-				t.tcpHandler(conn, binding.Endpoint)
+				t.tcpHandler(conn, bind.Endpoint)
 			}
 		}
 	}()
@@ -154,12 +154,12 @@ func (t *Tun2Socket) startUDPConn() {
 				}
 
 				rAddr := addr.(*net.UDPAddr)
-				binding := t.udpMapper.GetEndpointByPort(uint16(rAddr.Port))
-				if binding == nil {
+				bind := t.udpMapper.GetBindingByPort(uint16(rAddr.Port))
+				if bind == nil {
 					continue
 				}
 
-				t.udpHandler(buf[:n], binding.Endpoint)
+				t.udpHandler(buf[:n], bind.Endpoint)
 			}
 		}
 	}()
@@ -201,9 +201,9 @@ func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt *packet.TCPPa
 		},
 	}
 
-	binding := t.tcpMapper.GetBindingByEndpoint(ep)
-	if binding == nil {
-		binding = t.tcpMapper.PutBinding(&binding.Binding{
+	bind := t.tcpMapper.GetBindingByEndpoint(ep)
+	if bind == nil {
+		bind = t.tcpMapper.PutBinding(&binding.Binding{
 			Endpoint: ep,
 			Port:     t.tcpMapper.GenerateNonUsedPort(),
 		})
@@ -211,7 +211,7 @@ func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt *packet.TCPPa
 
 	copy(ipPkt.SourceAddress(), t.mirror)
 	copy(ipPkt.TargetAddress(), t.gateway)
-	tcpPkt.SetSourcePort(binding.Port)
+	tcpPkt.SetSourcePort(bind.Port)
 	tcpPkt.SetTargetPort(t.tcpPort)
 
 	tcpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())

@@ -59,7 +59,7 @@ func (mapper *Mapper) GetBindingByEndpoint(endpoint *Endpoint) *Binding {
 	return elm.Value.(*Binding)
 }
 
-func (mapper *Mapper) GetEndpointByPort(port uint16) *Binding {
+func (mapper *Mapper) GetBindingByPort(port uint16) *Binding {
 	mapper.lock.Lock()
 	defer mapper.lock.Unlock()
 
