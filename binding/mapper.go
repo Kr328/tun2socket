@@ -1,4 +1,4 @@
-package endpoint
+package binding
 
 import (
 	"container/list"

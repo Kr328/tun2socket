@@ -1,7 +1,7 @@
 package tun2socket
 
 import (
-	endpoint "github.com/kr328/tun2socket/binding"
+	"github.com/kr328/tun2socket/binding"
 	"github.com/kr328/tun2socket/io"
 	"github.com/kr328/tun2socket/tcpip/packet"
 	"net"
@@ -14,8 +14,8 @@ const (
 )
 
 type Allocator func(length int) []byte
-type TCPConnectionHandler func(conn net.Conn, endpoint *endpoint.Endpoint)
-type UDPPacketHandler func(payload []byte, endpoint *endpoint.Endpoint)
+type TCPConnectionHandler func(conn net.Conn, endpoint *binding.Endpoint)
+type UDPPacketHandler func(payload []byte, endpoint *binding.Endpoint)
 
 type Tun2Socket struct {
 	initial sync.Once
@@ -28,8 +28,8 @@ type Tun2Socket struct {
 	gateway net.IP
 	mirror  net.IP
 
-	tcpMapper *endpoint.Mapper
-	udpMapper *endpoint.Mapper
+	tcpMapper *binding.Mapper
+	udpMapper *binding.Mapper
 
 	tcpListener *net.TCPListener
 	udpConn     *net.UDPConn
@@ -54,12 +54,12 @@ func NewTun2Socket(device io.TunDevice, mtu int, gateway net.IP, mirror net.IP) 
 		mtu:       mtu,
 		gateway:   gateway,
 		mirror:    mirror,
-		tcpMapper: endpoint.NewMapper(),
-		udpMapper: endpoint.NewMapper(),
-		tcpHandler: func(conn net.Conn, endpoint *endpoint.Endpoint) {
+		tcpMapper: binding.NewMapper(),
+		udpMapper: binding.NewMapper(),
+		tcpHandler: func(conn net.Conn, endpoint *binding.Endpoint) {
 			_ = conn.Close()
 		},
-		udpHandler: func(payload []byte, endpoint *endpoint.Endpoint) {
+		udpHandler: func(payload []byte, endpoint *binding.Endpoint) {
 		},
 		allocator: func(length int) []byte {
 			return make([]byte, length)
@@ -190,12 +190,12 @@ func (t *Tun2Socket) startRedirect() {
 }
 
 func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt *packet.TCPPacket) {
-	ep := &endpoint.Endpoint{
-		Source: endpoint.Address{
+	ep := &binding.Endpoint{
+		Source: binding.Address{
 			IP:   ipPkt.SourceAddress(),
 			Port: tcpPkt.SourcePort(),
 		},
-		Target: endpoint.Address{
+		Target: binding.Address{
 			IP:   ipPkt.TargetAddress(),
 			Port: tcpPkt.TargetPort(),
 		},
@@ -203,7 +203,7 @@ func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt *packet.TCPPa
 
 	binding := t.tcpMapper.GetBindingByEndpoint(ep)
 	if binding == nil {
-		binding = t.tcpMapper.PutBinding(&endpoint.Binding{
+		binding = t.tcpMapper.PutBinding(&binding.Binding{
 			Endpoint: ep,
 			Port:     t.tcpMapper.GenerateNonUsedPort(),
 		})
