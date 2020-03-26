@@ -22,9 +22,11 @@ func NewPacketEncoder(device TunDevice, mtu int, provider buf.BufferProvider) *P
 
 func (encoder *PacketEncoder) Encode(pkt packet.IPPacket) error {
 	fragmented := fragment.IPPacketFragment(pkt, encoder.mtu, encoder.provider)
+	defer encoder.provider.Recycle(pkt.BaseDataBlock())
 
 	for _, f := range fragmented {
 		_, err := encoder.device.Write(f.BaseDataBlock())
+		encoder.provider.Recycle(f.BaseDataBlock())
 		if err != nil {
 			return err
 		}
