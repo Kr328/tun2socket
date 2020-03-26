@@ -24,44 +24,52 @@ func NewPacketDecoder(device TunDevice, mtu int, provider buf.BufferProvider) *P
 
 func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket, error) {
 	for {
-		buffer := decoder.provider.Obtain(decoder.mtu)
-
-		n, err := decoder.device.Read(buffer)
+		pkt, err := decoder.readNext()
 		if err != nil {
 			return nil, nil, err
+		} else if pkt == nil {
+			continue
 		}
 
-		data := buffer[:n]
+		pkt, err = decoder.reassembler.InjectPacket(pkt)
+		if err != nil {
+			if pkt != nil {
+				decoder.provider.Recycle(pkt.AsByteArray())
+			}
+			break
+		} else if pkt == nil {
+			continue
+		}
 
-		switch packet.DetectPacketVersion(data) {
-		case packet.IPv4:
-			rawPkt := packet.IPv4Packet(data)
-			if err := rawPkt.Verify(); err != nil {
-				decoder.provider.Recycle(buffer)
+		switch pkt.Protocol() {
+		case packet.TCP:
+			tcpPkt := packet.TCPPacket(pkt.Payload())
+			if tcpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()) != nil {
+				decoder.provider.Recycle(pkt.AsByteArray())
 				break
 			}
-
-			ipPkt, err := decoder.reassembler.InjectPacket(rawPkt)
-			if err != nil {
-				decoder.provider.Recycle(buffer)
-				break
-			} else if ipPkt == nil {
-				break
-			}
-
-			switch rawPkt.Protocol() {
-			case packet.TCP:
-				tcpPkt := packet.TCPPacket(ipPkt.Payload())
-				if tcpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-					decoder.provider.Recycle(buffer)
-					break
-				}
-				return ipPkt, tcpPkt, nil
-			default:
-				decoder.provider.Recycle(buffer)
-			}
+			return pkt, tcpPkt, nil
 		default:
-			decoder.provider.Recycle(buffer)
+			decoder.provider.Recycle(pkt.AsByteArray())
 		}
+	}
+}
+
+func (decoder *PacketDecoder) readNext() (packet.IPPacket, error) {
+	buffer := decoder.provider.Obtain(decoder.mtu)
+
+	n, err := decoder.device.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	data := buffer[:n]
+
+	switch packet.DetectPacketVersion(data) {
+	case packet.IPv4:
+		return packet.IPv4Packet(data), nil
+	default:
+		decoder.provider.Recycle(buffer)
+		return nil, nil
 	}
 }

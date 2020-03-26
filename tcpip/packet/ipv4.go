@@ -16,6 +16,10 @@ const (
 
 type IPv4Packet []byte
 
+func (pkt IPv4Packet) AsByteArray() []byte {
+	return pkt
+}
+
 func (pkt IPv4Packet) Protocol() Protocol {
 	return Protocol(pkt[9])
 }

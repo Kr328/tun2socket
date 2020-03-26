@@ -9,6 +9,7 @@ type Version byte
 type Protocol byte
 
 type IPPacket interface {
+	AsByteArray() []byte
 	SourceAddress() net.IP
 	TargetAddress() net.IP
 	Protocol() Protocol
