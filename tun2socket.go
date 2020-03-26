@@ -53,8 +53,8 @@ func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *
 		bp:        newBufferProvider(mtu),
 		device:    device,
 		mtu:       mtu,
-		gateway:   gateway4,
-		mirror:    mirror4,
+		gateway:   gateway4.To4(),
+		mirror:    mirror4.To4(),
 		tcpMapper: binding.NewMapper(),
 		udpMapper: binding.NewMapper(),
 		tcpHandler: func(conn net.Conn, endpoint *binding.Endpoint) {
@@ -213,17 +213,21 @@ func (t *Tun2Socket) startRedirect() {
 }
 
 func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) bool {
-	if ipPkt.SourceAddress().Equal(t.gateway) && tcpPkt.SourcePort() == t.tcpPort {
-		port := tcpPkt.TargetPort()
-		bind := t.tcpMapper.GetBindingByPort(port)
-		if bind == nil {
+	if ipPkt.TargetAddress().Equal(t.mirror) {
+		if tcpPkt.SourcePort() == t.tcpPort {
+			port := tcpPkt.TargetPort()
+			bind := t.tcpMapper.GetBindingByPort(port)
+			if bind == nil {
+				return false
+			}
+
+			copy(ipPkt.SourceAddress(), bind.Endpoint.Target.IP)
+			copy(ipPkt.TargetAddress(), bind.Endpoint.Source.IP)
+			tcpPkt.SetSourcePort(bind.Endpoint.Target.Port)
+			tcpPkt.SetTargetPort(bind.Endpoint.Source.Port)
+		} else {
 			return false
 		}
-
-		copy(ipPkt.SourceAddress(), bind.Endpoint.Target.IP)
-		copy(ipPkt.TargetAddress(), bind.Endpoint.Source.IP)
-		tcpPkt.SetSourcePort(bind.Endpoint.Target.Port)
-		tcpPkt.SetTargetPort(bind.Endpoint.Source.Port)
 	} else {
 		ep := &binding.Endpoint{
 			Source: binding.Address{
