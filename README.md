@@ -13,6 +13,7 @@ mirror := gateway.getSingleFreeAddress() // a free ip in tun address range
 tun2socket := tun2socket2.NewTun2Socket(tun, mtu, gateway, mirror)
 tun2socket.SetTCPHandler(func(conn net.Conn, endpoint *binding.Endpoint) {
 	// fmt.Println("[TCP] " + endpoint.Source.IP.String() + " -> " + endpoint.Target.IP.String())
+
     // handle new tcp connection here
     // start a new goroutine if need
 })
