@@ -15,7 +15,7 @@ const (
 
 type Allocator func(length int) []byte
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
-type UDPHandler func(payload []byte, endpoint *binding.Endpoint)
+type UDPHandler func(payload []byte, conn net.PacketConn, endpoint *binding.Endpoint)
 type TunDevice = io.TunDevice
 
 type Tun2Socket struct {
@@ -60,7 +60,8 @@ func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *
 		tcpHandler: func(conn net.Conn, endpoint *binding.Endpoint) {
 			_ = conn.Close()
 		},
-		udpHandler: func(payload []byte, endpoint *binding.Endpoint) {
+		udpHandler: func(payload []byte, conn net.PacketConn, endpoint *binding.Endpoint) {
+
 		},
 		allocator: func(length int) []byte {
 			return make([]byte, length)
@@ -176,7 +177,7 @@ func (t *Tun2Socket) startUDPConn() {
 					continue
 				}
 
-				t.udpHandler(buf[:n], bind.Endpoint)
+				t.udpHandler(buf[:n], udp, bind.Endpoint)
 			}
 
 			t.udpMapper.Reset()
