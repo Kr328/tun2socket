@@ -104,7 +104,7 @@ func (t *Tun2Socket) startTCPRedirect() {
 		for !t.closed {
 			port, err := t.tcpRedirect.Listen()
 			if err != nil {
-				t.Stop()
+				t.Close()
 				return
 			}
 
@@ -136,7 +136,7 @@ func (t *Tun2Socket) startTCPRedirect() {
 func (t *Tun2Socket) startRedirect() {
 	go func() {
 		if err := t.packetRedirect.Exec(); err != nil {
-			t.Stop()
+			t.Close()
 			return
 		}
 	}()
