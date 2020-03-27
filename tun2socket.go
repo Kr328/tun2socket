@@ -58,7 +58,7 @@ func (t *Tun2Socket) Start() {
 	})
 }
 
-func (t *Tun2Socket) Stop() {
+func (t *Tun2Socket) Close() {
 	t.stop.Do(func() {
 		t.closed = true
 
