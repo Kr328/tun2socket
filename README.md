@@ -7,6 +7,7 @@ A utilize that use system tcpip stack to forward packet from tun device.
 - IPv4
 - IP Fragment/Reassemble
 - TCP/UDP
+- Ping Echo
 
 ### Usage
 
@@ -36,4 +37,3 @@ tun2socket.Start() // start now
 ### TODO
 
 - [ ] IPv6 Supoort
-- [ ] Auto Ping Echo

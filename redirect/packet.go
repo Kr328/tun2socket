@@ -48,13 +48,15 @@ func (r *Redirect) Exec() error {
 			err = r.handleTCPPacket(ipPkt, pkt)
 		case packet.UDPPacket:
 			err = r.handleUDPPacket(ipPkt, pkt)
+		case packet.ICMPPacket:
+			err = r.handleICMPPacket(ipPkt, pkt)
 		default:
 			r.bp.Recycle(ipPkt.BaseDataBlock())
 			continue
 		}
 
 		if err != nil {
-			return nil
+			return err
 		}
 	}
 }
@@ -163,6 +165,28 @@ func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacke
 	r.bp.Recycle(ipPkt.BaseDataBlock())
 
 	return nil
+}
+
+func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPacket) error {
+	if icmpPkt.Type() != packet.ICMPTypePingRequest || icmpPkt.Code() != 0 {
+		r.bp.Recycle(ipPkt.BaseDataBlock())
+		return nil
+	}
+
+	s := make(net.IP, len(ipPkt.SourceAddress()))
+	t := make(net.IP, len(ipPkt.TargetAddress()))
+
+	copy(s, ipPkt.SourceAddress())
+	copy(t, ipPkt.TargetAddress())
+	copy(ipPkt.SourceAddress(), t)
+	copy(ipPkt.TargetAddress(), s)
+
+	icmpPkt.SetCode(packet.ICMPTypePingResponse)
+	icmpPkt.SetType(0)
+
+	icmpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
+
+	return r.encoder.Encode(ipPkt)
 }
 
 func (r *Redirect) sendUDP(payload []byte, endpoint *binding.Endpoint) error {

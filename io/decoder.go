@@ -56,6 +56,13 @@ func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket,
 				break
 			}
 			return pkt, udpPkt, nil
+		case packet.ICMP:
+			icmpPkt := packet.ICMPPacket(pkt.Payload())
+			if err := icmpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
+				decoder.provider.Recycle(pkt.BaseDataBlock())
+				break
+			}
+			return pkt, icmpPkt, nil
 		default:
 			decoder.provider.Recycle(pkt.BaseDataBlock())
 		}
