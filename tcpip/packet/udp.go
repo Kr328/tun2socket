@@ -6,9 +6,17 @@ import (
 	"net"
 )
 
+const (
+	UdpHeaderSize = 8
+)
+
 type UDPPacket []byte
 
 func (pkt UDPPacket) Verify(sourceAddress net.IP, targetAddress net.IP) error {
+	if pkt.Length() < uint16(len(pkt)) {
+		return ErrInvalidLength
+	}
+
 	if pkt[6] != 0 || pkt[7] != 0 {
 		var checksum [2]byte
 		checksum[0] = pkt[6]
@@ -38,6 +46,9 @@ func (pkt UDPPacket) Verify(sourceAddress net.IP, targetAddress net.IP) error {
 }
 
 func (pkt UDPPacket) ResetChecksum(sourceAddress net.IP, targetAddress net.IP) {
+	pkt[6] = 0
+	pkt[7] = 0
+
 	s := uint32(0)
 	s += sum.Sum(sourceAddress)
 	s += sum.Sum(targetAddress)
@@ -64,4 +75,16 @@ func (pkt UDPPacket) SetSourcePort(port uint16) {
 
 func (pkt UDPPacket) SetTargetPort(port uint16) {
 	binary.BigEndian.PutUint16(pkt[2:], port)
+}
+
+func (pkt UDPPacket) Length() uint16 {
+	return binary.BigEndian.Uint16(pkt[4:])
+}
+
+func (pkt UDPPacket) SetLength(length uint16) {
+	binary.BigEndian.PutUint16(pkt[4:], length)
+}
+
+func (pkt UDPPacket) Payload() []byte {
+	return pkt[UdpHeaderSize:pkt.Length()]
 }
