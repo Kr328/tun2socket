@@ -71,7 +71,7 @@ func (pkt IPv4Packet) ResetChecksum() error {
 		return ErrInvalidLength
 	}
 
-	headerLength := uint16(pkt[0]&0xF) * 4
+	headerLength := pkt.HeaderLength()
 	packetLength := binary.BigEndian.Uint16(pkt[2:])
 
 	if pkt[0]>>4 != 4 {
@@ -139,7 +139,7 @@ func (pkt IPv4Packet) Flags() uint8 {
 }
 
 func (pkt IPv4Packet) SetFlags(flags byte) {
-	pkt[6] &= 0xE0
+	pkt[6] &= 0x1F
 	pkt[6] |= flags << 5
 }
 

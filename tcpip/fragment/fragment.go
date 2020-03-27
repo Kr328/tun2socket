@@ -33,6 +33,13 @@ func IPPacketFragment(pkt packet.IPPacket, mtu int, provider buf.BufferProvider)
 			copy(p.SourceAddress(), pkt.SourceAddress())
 			copy(p.TargetAddress(), pkt.TargetAddress())
 			copy(p.Payload(), pkt.Payload()[i*maxPayloadSize:])
+
+			if i == len(fragments) - 1 {
+				p.SetFlags(0)
+			} else {
+				p.SetFlags(packet.IPv4MoreFragment)
+			}
+
 			if err := p.ResetChecksum(); err != nil {
 				for _, pkt := range fragments {
 					if pkt != nil {
