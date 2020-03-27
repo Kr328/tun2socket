@@ -1,9 +1,6 @@
 package binding
 
-import "sync"
-
 type PortPool struct {
-	lock    sync.Mutex
 	current uint16
 }
 
