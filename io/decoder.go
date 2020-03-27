@@ -51,7 +51,7 @@ func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket,
 			return pkt, tcpPkt, nil
 		case packet.UDP:
 			udpPkt := packet.UDPPacket(pkt.Payload())
-			if udpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()) != nil {
+			if err := udpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
 				decoder.provider.Recycle(pkt.BaseDataBlock())
 				break
 			}

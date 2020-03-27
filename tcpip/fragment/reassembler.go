@@ -22,8 +22,8 @@ type tracker struct {
 }
 
 type Reassembler struct {
-	trackers    map[uint16]*tracker
-	provider    buf.BufferProvider
+	trackers map[uint16]*tracker
+	provider buf.BufferProvider
 }
 
 func NewReassemble(provider buf.BufferProvider) *Reassembler {
@@ -56,8 +56,9 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 	if tacker == nil {
 		tacker = &tracker{
 			List: list.New(),
-			ttl:  time.Now(),
+			ttl:  time.Now().Add(defaultIPFragmentTimeout),
 		}
+
 		tacker.PushBack(pkt)
 
 		r.trackers[pkt.Identification()] = tacker
@@ -108,7 +109,7 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 	packet.SetPacketVersion(result, packet.IPv4)
 	result.SetHeaderLength(pkt.HeaderLength())
 	result.SetTypeOfService(pkt.TypeOfService())
-	result.SetPacketLength(expectedOffset)
+	result.SetPacketLength(pkt.HeaderLength() + expectedOffset)
 	result.SetIdentification(pkt.Identification())
 	result.SetFragmentOffset(0)
 	result.SetFlags(0)
