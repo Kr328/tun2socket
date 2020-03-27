@@ -195,12 +195,7 @@ func (t *Tun2Socket) startRedirect() {
 				t.Stop()
 				return
 			}
-
-			if tPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-				t.bp.Recycle(ipPkt.BaseDataBlock())
-				continue
-			}
-
+			
 			writeBack := false
 			switch pkt := tPkt.(type) {
 			case packet.TCPPacket:
