@@ -121,7 +121,7 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 		if bind == nil {
 			bind = r.tcpMapper.PutBinding(&binding.Binding{
 				Endpoint: ep,
-				Port:     r.tcpMapper.GenerateNonUsedPort(),
+				Port:     r.tcpMapper.FindFreePort(),
 			})
 		}
 

@@ -72,7 +72,7 @@ func (mapper *Mapper) GetBindingByPort(port uint16) *Binding {
 	return elm.Value.(*Binding)
 }
 
-func (mapper *Mapper) GenerateNonUsedPort() uint16 {
+func (mapper *Mapper) FindFreePort() uint16 {
 	mapper.lock.Lock()
 	defer mapper.lock.Unlock()
 
