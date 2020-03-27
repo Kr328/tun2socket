@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/kr328/tun2socket/tcpip/buf"
 	"github.com/kr328/tun2socket/tcpip/packet"
-	"sync"
 	"time"
 )
 
@@ -23,19 +22,12 @@ type tracker struct {
 }
 
 type Reassembler struct {
-	trackerPool sync.Pool
 	trackers    map[uint16]*tracker
 	provider    buf.BufferProvider
 }
 
 func NewReassemble(provider buf.BufferProvider) *Reassembler {
 	return &Reassembler{
-		trackerPool: sync.Pool{New: func() interface{} {
-			return &tracker{
-				List: list.New(),
-				ttl:  time.Now(),
-			}
-		}},
 		trackers: map[uint16]*tracker{},
 		provider: provider,
 	}
@@ -54,43 +46,47 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 		return pkt, nil
 	}
 
+	r.clearExpiredTackers()
+
 	if pkt.Flags()&packet.IPv4DontFragment != 0 {
 		return nil, ErrReassembleBlocked
 	}
 
-	metadata := r.trackers[pkt.Identification()]
-	if metadata == nil {
-		metadata = r.trackerPool.Get().(*tracker)
-		metadata.PushBack(pkt)
-		metadata.ttl = time.Now().Add(defaultIPFragmentTimeout)
+	tacker := r.trackers[pkt.Identification()]
+	if tacker == nil {
+		tacker = &tracker{
+			List: list.New(),
+			ttl:  time.Now(),
+		}
+		tacker.PushBack(pkt)
 
-		r.trackers[pkt.Identification()] = metadata
+		r.trackers[pkt.Identification()] = tacker
 
 		return nil, nil
 	}
 
-	metadata.ttl = time.Now().Add(defaultIPFragmentTimeout)
+	tacker.ttl = time.Now().Add(defaultIPFragmentTimeout)
 
 	inserted := false
-	for iterator := metadata.Back(); iterator != nil; iterator = iterator.Prev() {
+	for iterator := tacker.Back(); iterator != nil; iterator = iterator.Prev() {
 		p, ok := iterator.Value.(packet.IPv4Packet)
 		if !ok {
 			return nil, nil
 		}
 
 		if p.FragmentOffset() < pkt.FragmentOffset() {
-			metadata.List.InsertAfter(pkt, iterator)
+			tacker.List.InsertAfter(pkt, iterator)
 			inserted = true
 			break
 		}
 	}
 	if !inserted {
-		metadata.PushFront(pkt)
+		tacker.PushFront(pkt)
 	}
 
 	expectedOffset := uint16(0)
 	completed := false
-	for iterator := metadata.Front(); iterator != nil; iterator = iterator.Next() {
+	for iterator := tacker.Front(); iterator != nil; iterator = iterator.Next() {
 		pkt, ok := iterator.Value.(packet.IPv4Packet)
 		if !ok {
 			return nil, nil
@@ -123,7 +119,7 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 	copy(result.Options(), pkt.Options())
 
 	// Merge fragments
-	for iterator := metadata.Front(); iterator != nil; iterator = iterator.Next() {
+	for iterator := tacker.Front(); iterator != nil; iterator = iterator.Next() {
 		pkt := iterator.Value.(packet.IPv4Packet)
 		payload := result.Payload()
 
@@ -134,8 +130,16 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 
 	delete(r.trackers, pkt.Identification())
 
-	metadata.Init()
-	r.trackerPool.Put(metadata)
-
 	return result, nil
+}
+
+func (r *Reassembler) clearExpiredTackers() {
+	for k, t := range r.trackers {
+		if t.ttl.Before(time.Now()) {
+			for iterator := t.Front(); iterator != nil; iterator = iterator.Next() {
+				r.provider.Recycle(iterator.Value.(packet.IPPacket).BaseDataBlock())
+			}
+			delete(r.trackers, k)
+		}
+	}
 }
