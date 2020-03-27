@@ -13,7 +13,7 @@ func IPPacketFragment(pkt packet.IPPacket, mtu int, provider buf.BufferProvider)
 	case packet.IPv4Packet:
 		maxPayloadSize := mtu - int(pkt.HeaderLength())
 		maxPayloadSize = maxPayloadSize - maxPayloadSize%8
-		fragmentCount := calFragmentCount(len(pkt.Payload()), maxPayloadSize)
+		fragmentCount := calculateFragmentCount(len(pkt.Payload()), maxPayloadSize)
 		fragments := make([]packet.IPPacket, fragmentCount)
 		identification := generateIdentification()
 
@@ -71,7 +71,7 @@ func generateIdentification() uint16 {
 	return binary.BigEndian.Uint16(data[:])
 }
 
-func calFragmentCount(length, maxSize int) int {
+func calculateFragmentCount(length, maxSize int) int {
 	result := length / maxSize
 
 	if length%maxSize > 0 {
