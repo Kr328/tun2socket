@@ -17,6 +17,19 @@ func IPPacketFragment(pkt packet.IPPacket, mtu int, provider buf.BufferProvider)
 		fragments := make([]packet.IPPacket, fragmentCount)
 		identification := generateIdentification()
 
+		if fragmentCount == 1 {
+			pkt.SetFragmentOffset(0)
+			pkt.SetFlags(0)
+			if err := pkt.ResetChecksum(); err != nil {
+				provider.Recycle(pkt)
+				return fragments[0:0]
+			}
+
+			fragments[0] = pkt
+
+			return fragments
+		}
+
 		for i := 0; i < fragmentCount; i++ {
 			packetLength := min(len(pkt.Payload())-i*maxPayloadSize, maxPayloadSize) + int(pkt.HeaderLength())
 
@@ -48,11 +61,13 @@ func IPPacketFragment(pkt packet.IPPacket, mtu int, provider buf.BufferProvider)
 						break
 					}
 				}
-				return nil
+				return fragments[0:0]
 			}
 
 			fragments[i] = p
 		}
+
+		provider.Recycle(pkt.BaseDataBlock())
 
 		return fragments
 	}
