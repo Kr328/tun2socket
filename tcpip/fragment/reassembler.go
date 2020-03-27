@@ -50,7 +50,7 @@ func (r *Reassembler) InjectPacket(pkt packet.IPPacket) (packet.IPPacket, error)
 }
 
 func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, error) {
-	if pkt.FragmentOffset()&packet.IPv4MoreFragment == 0 && pkt.FragmentOffset() == 0 {
+	if pkt.Flags()&packet.IPv4MoreFragment == 0 && pkt.FragmentOffset() == 0 {
 		return pkt, nil
 	}
 
