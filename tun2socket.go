@@ -200,6 +200,8 @@ func (t *Tun2Socket) startRedirect() {
 			switch pkt := tPkt.(type) {
 			case packet.TCPPacket:
 				writeBack = t.handleTCPPacket(ipPkt, pkt)
+			case packet.UDPPacket:
+				writeBack = t.handleUDPPacket(ipPkt, pkt)
 			default:
 				continue
 			}
@@ -258,6 +260,53 @@ func (t *Tun2Socket) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPac
 	}
 
 	tcpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
+
+	return true
+}
+
+func (t *Tun2Socket) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacket) bool {
+	if ipPkt.TargetAddress().Equal(t.mirror) {
+		if udpPkt.SourcePort() == t.tcpPort {
+			port := udpPkt.TargetPort()
+			bind := t.tcpMapper.GetBindingByPort(port)
+			if bind == nil {
+				return false
+			}
+
+			copy(ipPkt.SourceAddress(), bind.Endpoint.Target.IP)
+			copy(ipPkt.TargetAddress(), bind.Endpoint.Source.IP)
+			udpPkt.SetSourcePort(bind.Endpoint.Target.Port)
+			udpPkt.SetTargetPort(bind.Endpoint.Source.Port)
+		} else {
+			return false
+		}
+	} else {
+		ep := &binding.Endpoint{
+			Source: binding.Address{
+				IP:   ipPkt.SourceAddress(),
+				Port: udpPkt.SourcePort(),
+			},
+			Target: binding.Address{
+				IP:   ipPkt.TargetAddress(),
+				Port: udpPkt.TargetPort(),
+			},
+		}
+
+		bind := t.tcpMapper.GetBindingByEndpoint(ep)
+		if bind == nil {
+			bind = t.tcpMapper.PutBinding(&binding.Binding{
+				Endpoint: ep,
+				Port:     t.tcpMapper.GenerateNonUsedPort(),
+			})
+		}
+
+		copy(ipPkt.SourceAddress(), t.mirror.To4())
+		copy(ipPkt.TargetAddress(), t.gateway.To4())
+		udpPkt.SetSourcePort(bind.Port)
+		udpPkt.SetTargetPort(t.tcpPort)
+	}
+
+	udpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
 
 	return true
 }
