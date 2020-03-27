@@ -2,6 +2,12 @@
 
 A utilize that use system tcpip stack to forward packet from tun device.
 
+### Feature
+
+- IPv4
+- IP Fragment/Reassemble
+- TCP/UDP
+
 ### Usage
 
 ```go
@@ -26,3 +32,8 @@ tun2socket.SetUDPHandler(func(payload []byte, endpoint *binding.Endpoint, sender
 
 tun2socket.Start() // start now
 ```
+
+### TODO
+
+- [ ] IPv6 Supoort
+- [ ] Auto Ping Echo
