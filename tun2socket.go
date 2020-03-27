@@ -195,7 +195,7 @@ func (t *Tun2Socket) startRedirect() {
 				t.Stop()
 				return
 			}
-			
+
 			writeBack := false
 			switch pkt := tPkt.(type) {
 			case packet.TCPPacket:
