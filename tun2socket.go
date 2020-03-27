@@ -196,17 +196,25 @@ func (t *Tun2Socket) startRedirect() {
 				return
 			}
 
+			if tPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
+				t.bp.Recycle(ipPkt.BaseDataBlock())
+				continue
+			}
+
+			writeBack := false
 			switch pkt := tPkt.(type) {
 			case packet.TCPPacket:
-				if !t.handleTCPPacket(ipPkt, pkt) {
-					continue
-				}
+				writeBack = t.handleTCPPacket(ipPkt, pkt)
 			default:
 				continue
 			}
 
-			if encoder.Encode(ipPkt) != nil {
-				t.Stop()
+			if writeBack {
+				if encoder.Encode(ipPkt) != nil {
+					t.Stop()
+				}
+			} else {
+				t.bp.Recycle(ipPkt.BaseDataBlock())
 			}
 		}
 	}()
