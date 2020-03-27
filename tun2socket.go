@@ -34,6 +34,27 @@ type Tun2Socket struct {
 	allocator  Allocator
 }
 
+type fakeTCPConn struct {
+	*net.TCPConn
+	endpoint *binding.Endpoint
+}
+
+func (t *fakeTCPConn) LocalAddr() net.Addr {
+	return &net.TCPAddr{
+		IP:   t.endpoint.Target.IP,
+		Port: int(t.endpoint.Target.Port),
+		Zone: "",
+	}
+}
+
+func (t *fakeTCPConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{
+		IP:   t.endpoint.Source.IP,
+		Port: int(t.endpoint.Source.Port),
+		Zone: "",
+	}
+}
+
 func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
 	return &Tun2Socket{
 		gateway:        gateway4,
@@ -127,7 +148,12 @@ func (t *Tun2Socket) startTCPRedirect() {
 					continue
 				}
 
-				t.tcpHandler(conn, ep)
+				fakeConn := &fakeTCPConn{
+					TCPConn:  conn,
+					endpoint: ep,
+				}
+
+				t.tcpHandler(fakeConn, ep)
 			}
 		}
 	}()
