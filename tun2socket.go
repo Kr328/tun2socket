@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	udpPacketBufferSize = 65535
+	packetHandlerCount = 8
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
@@ -160,10 +160,12 @@ func (t *Tun2Socket) startTCPRedirect() {
 }
 
 func (t *Tun2Socket) startRedirect() {
-	go func() {
-		if err := t.packetRedirect.Exec(); err != nil {
+	t.packetRedirect.Start()
+
+	for i := 0; i < packetHandlerCount; i++ {
+		go func() {
+			t.packetRedirect.Exec()
 			t.Close()
-			return
-		}
-	}()
+		}()
+	}
 }
