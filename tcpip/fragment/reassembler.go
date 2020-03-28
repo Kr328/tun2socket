@@ -14,6 +14,7 @@ var (
 
 const (
 	defaultIPFragmentTimeout = time.Second * 120
+	maxReassemblingPacket    = 1024
 )
 
 type tracker struct {
@@ -54,6 +55,10 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 
 	tacker := r.trackers[pkt.Identification()]
 	if tacker == nil {
+		if len(r.trackers) > maxReassemblingPacket {
+			return nil, ErrReassembleBlocked
+		}
+
 		tacker = &tracker{
 			List: list.New(),
 			ttl:  time.Now().Add(defaultIPFragmentTimeout),
