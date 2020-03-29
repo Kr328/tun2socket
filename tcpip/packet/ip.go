@@ -13,7 +13,6 @@ type IPPacket interface {
 	SourceAddress() net.IP
 	TargetAddress() net.IP
 	Protocol() Protocol
-	Verify() error
 	Payload() []byte
 }
 
@@ -31,7 +30,6 @@ const (
 var (
 	ErrInvalidLength    = errors.New("invalid packet length")
 	ErrInvalidIPVersion = errors.New("invalid ip version")
-	ErrInvalidChecksum  = errors.New("invalid checksum")
 )
 
 func DetectPacketVersion(b []byte) Version {

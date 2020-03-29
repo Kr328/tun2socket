@@ -12,27 +12,6 @@ const (
 
 type ICMPPacket []byte
 
-func (pkt ICMPPacket) Verify(net.IP, net.IP) error {
-	var checksum [2]byte
-	checksum[0] = pkt[2]
-	checksum[1] = pkt[3]
-
-	pkt[2] = 0
-	pkt[3] = 0
-
-	defer func() {
-		pkt[2] = checksum[0]
-		pkt[3] = checksum[1]
-	}()
-
-	check := sum.Checksum(0, pkt)
-	if checksum[0] != check[0] || checksum[1] != check[1] {
-		return ErrInvalidChecksum
-	}
-
-	return nil
-}
-
 func (pkt ICMPPacket) ResetChecksum(net.IP, net.IP) {
 	pkt[2] = 0
 	pkt[3] = 0

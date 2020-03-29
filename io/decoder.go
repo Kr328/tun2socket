@@ -41,31 +41,20 @@ func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket,
 			continue
 		}
 
+		var tPkt packet.TransportPacket
 		switch pkt.Protocol() {
 		case packet.TCP:
-			tcpPkt := packet.TCPPacket(pkt.Payload())
-			if tcpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()) != nil {
-				decoder.provider.Recycle(pkt.BaseDataBlock())
-				break
-			}
-			return pkt, tcpPkt, nil
+			tPkt = packet.TCPPacket(pkt.Payload())
 		case packet.UDP:
-			udpPkt := packet.UDPPacket(pkt.Payload())
-			if err := udpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
-				decoder.provider.Recycle(pkt.BaseDataBlock())
-				break
-			}
-			return pkt, udpPkt, nil
+			tPkt = packet.UDPPacket(pkt.Payload())
 		case packet.ICMP:
-			icmpPkt := packet.ICMPPacket(pkt.Payload())
-			if err := icmpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
-				decoder.provider.Recycle(pkt.BaseDataBlock())
-				break
-			}
-			return pkt, icmpPkt, nil
+			tPkt = packet.ICMPPacket(pkt.Payload())
 		default:
 			decoder.provider.Recycle(pkt.BaseDataBlock())
+			continue
 		}
+
+		return pkt, tPkt, nil
 	}
 }
 

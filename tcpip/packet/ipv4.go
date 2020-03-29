@@ -24,36 +24,6 @@ func (pkt IPv4Packet) Protocol() Protocol {
 	return Protocol(pkt[9])
 }
 
-func (pkt IPv4Packet) Verify() error {
-	if len(pkt) < IPv4PacketMinLength {
-		return ErrInvalidLength
-	}
-
-	checksum := []byte{pkt[10], pkt[11]}
-	headerLength := uint16(pkt[0]&0xF) * 4
-	packetLength := binary.BigEndian.Uint16(pkt[2:])
-
-	if pkt[0]>>4 != 4 {
-		return ErrInvalidIPVersion
-	}
-
-	if uint16(len(pkt)) < packetLength || packetLength < headerLength {
-		return ErrInvalidLength
-	}
-
-	pkt[10] = 0
-	pkt[11] = 0
-	defer copy(pkt[10:12], checksum)
-
-	answer := sum.Checksum(0, pkt[:headerLength])
-
-	if answer[0] != checksum[0] || answer[1] != checksum[1] {
-		return ErrInvalidChecksum
-	}
-
-	return nil
-}
-
 func (pkt IPv4Packet) SourceAddress() net.IP {
 	return net.IP(pkt[12:16])
 }
