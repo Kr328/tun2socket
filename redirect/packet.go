@@ -222,14 +222,9 @@ func (r *Redirect) sendUDP(payload []byte, endpoint *binding.Endpoint) error {
 			return err
 		}
 
-		ctx := io.PacketContext{
+		r.io.Outbound() <- io.PacketContext{
 			IPPkt:        ipPkt,
 			TransportPkt: udpPkt,
-		}
-
-		select {
-		case r.io.Outbound() <- ctx:
-		default:
 		}
 
 		return nil
