@@ -6,6 +6,7 @@ import (
 	"github.com/kr328/tun2socket/tcpip/buf"
 	"github.com/kr328/tun2socket/tcpip/packet"
 	"net"
+	"sync"
 )
 
 const (
@@ -13,6 +14,9 @@ const (
 )
 
 type Redirect struct {
+	lock   sync.Mutex
+	closed bool
+
 	gateway4 net.IP
 	mirror4  net.IP
 
@@ -79,6 +83,11 @@ func (r *Redirect) SetUDPReceiver(allocator UDPAllocator, receiver UDPReceiver) 
 }
 
 func (r *Redirect) Close() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	r.closed = true
+
 	close(r.inbound)
 	close(r.outbound)
 }
@@ -153,6 +162,12 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 
 	data := r.encoder.Encode(ipPkt)
 
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	if r.closed {
+		return
+	}
+
 	for _, d := range data {
 		select {
 		case r.outbound <- d:
@@ -211,6 +226,12 @@ func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPa
 
 	data := r.encoder.Encode(ipPkt)
 
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	if r.closed {
+		return
+	}
+
 	for _, d := range data {
 		select {
 		case r.outbound <- d:
@@ -255,6 +276,12 @@ func (r *Redirect) SendUDP(payload []byte, endpoint *binding.Endpoint) error {
 		}
 
 		data := r.encoder.Encode(ipPkt)
+
+		r.lock.Lock()
+		defer r.lock.Unlock()
+		if r.closed {
+			return nil
+		}
 
 		for _, d := range data {
 			select {

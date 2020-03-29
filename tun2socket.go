@@ -13,10 +13,10 @@ type TunDevice = io.ReadWriteCloser
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
 
 type Tun2Socket struct {
-	initial  sync.Once
-	stop     sync.Once
-	closed   bool
-	provider buf.BufferProvider
+	lock      sync.Mutex
+	initialed bool
+	closed    bool
+	provider  buf.BufferProvider
 
 	mtu     int
 	device  TunDevice
@@ -75,21 +75,33 @@ func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *
 }
 
 func (t *Tun2Socket) Start() {
-	t.initial.Do(func() {
-		t.startTCPRedirect()
-		t.startRedirect()
-		t.startReader()
-		t.startWriter()
-	})
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if t.initialed {
+		return
+	}
+
+	t.initialed = true
+
+	t.startTCPRedirect()
+	t.startRedirect()
+	t.startReader()
+	t.startWriter()
 }
 
 func (t *Tun2Socket) Close() {
-	t.stop.Do(func() {
-		t.closed = true
+	t.lock.Lock()
+	defer t.lock.Unlock()
 
-		_ = t.device.Close()
-		t.tcpRedirect.Close()
-	})
+	if t.closed {
+		return
+	}
+
+	t.closed = true
+
+	_ = t.device.Close()
+	t.tcpRedirect.Close()
 }
 
 func (t *Tun2Socket) SetTCPHandler(handler TCPHandler) {
@@ -156,7 +168,12 @@ func (t *Tun2Socket) startWriter() {
 				return
 			}
 
+			t.lock.Lock()
+			if t.closed {
+				return
+			}
 			_, err := t.device.Write(buffer)
+			t.lock.Unlock()
 			if err != nil {
 				return
 			}
