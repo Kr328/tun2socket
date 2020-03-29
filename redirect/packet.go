@@ -8,11 +8,13 @@ import (
 )
 
 type Redirect struct {
+	device   io.TunDevice
 	gateway4 net.IP
 	mirror4  net.IP
 
 	bp        *bufferProvider
-	io        *io.IO
+	encoder   *io.PacketEncoder
+	decoder   *io.PacketDecoder
 	tcpMapper *binding.Mapper
 
 	tcp4Port     uint16
@@ -26,36 +28,35 @@ func NewRedirect(device io.TunDevice, mtu int, gateway, mirror net.IP) *Redirect
 	return &Redirect{
 		gateway4:  gateway,
 		mirror4:   mirror,
+		device:    device,
 		bp:        bp,
-		io:        io.NewIO(device, mtu, bp),
+		encoder:   io.NewPacketEncoder(device, mtu, bp),
+		decoder:   io.NewPacketDecoder(device, mtu, bp),
 		tcpMapper: binding.NewMapper(),
 	}
 }
 
-func (r *Redirect) Start() {
-	r.io.Start()
-}
-
-func (r *Redirect) Exec() {
+func (r *Redirect) Exec() error {
 	for {
-		select {
-		case ctx := <-r.io.Inbound():
-			ipPkt := ctx.IPPkt
-			tPkt := ctx.TransportPkt
+		ipPkt, tPkt, err := r.decoder.Decode()
+		if err != nil {
+			return err
+		}
 
-			switch pkt := tPkt.(type) {
-			case packet.TCPPacket:
-				r.handleTCPPacket(ipPkt, pkt)
-			case packet.UDPPacket:
-				r.handleUDPPacket(ipPkt, pkt)
-			case packet.ICMPPacket:
-				r.handleICMPPacket(ipPkt, pkt)
-			default:
-				r.bp.Recycle(ipPkt.BaseDataBlock())
-				continue
-			}
-		case <-r.io.Wait():
-			return
+		switch pkt := tPkt.(type) {
+		case packet.TCPPacket:
+			err = r.handleTCPPacket(ipPkt, pkt)
+		case packet.UDPPacket:
+			err = r.handleUDPPacket(ipPkt, pkt)
+		case packet.ICMPPacket:
+			err = r.handleICMPPacket(ipPkt, pkt)
+		default:
+			r.bp.Recycle(ipPkt.BaseDataBlock())
+			continue
+		}
+
+		if err != nil {
+			return err
 		}
 	}
 }
@@ -71,7 +72,7 @@ func (r *Redirect) SetUDPReceiver(allocator UDPAllocator, receiver UDPReceiver) 
 }
 
 func (r *Redirect) Close() {
-	r.io.Close()
+	_ = r.device.Close()
 }
 
 func (r *Redirect) FindEndpointByPort(port uint16) *binding.Endpoint {
@@ -82,11 +83,11 @@ func (r *Redirect) FindEndpointByPort(port uint16) *binding.Endpoint {
 	return bind.Endpoint
 }
 
-func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) {
+func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) error {
 	redirectPort := r.tcp4Port
 	if redirectPort <= 0 {
 		r.bp.Recycle(ipPkt.BaseDataBlock())
-		return
+		return nil
 	}
 
 	if ipPkt.TargetAddress().Equal(r.mirror4) {
@@ -95,7 +96,7 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 			bind := r.tcpMapper.GetBindingByPort(port)
 			if bind == nil {
 				r.bp.Recycle(ipPkt.BaseDataBlock())
-				return
+				return nil
 			}
 
 			copy(ipPkt.SourceAddress(), bind.Endpoint.Target.IP)
@@ -104,7 +105,7 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 			tcpPkt.SetTargetPort(bind.Endpoint.Source.Port)
 		} else {
 			r.bp.Recycle(ipPkt.BaseDataBlock())
-			return
+			return nil
 		}
 	} else {
 		ep := &binding.Endpoint{
@@ -132,19 +133,17 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 		tcpPkt.SetTargetPort(redirectPort)
 	}
 
-	r.io.Outbound() <- io.PacketContext{
-		IPPkt:        ipPkt,
-		TransportPkt: tcpPkt,
-	}
+	tcpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
+
+	return r.encoder.Encode(ipPkt)
 }
 
-func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacket) {
+func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacket) error {
 	alloc := r.udpAllocator
 	receive := r.udpReceiver
 
 	if alloc == nil || receive == nil {
-		r.bp.Recycle(ipPkt.BaseDataBlock())
-		return
+		return nil
 	}
 
 	ep := &binding.Endpoint{
@@ -164,12 +163,14 @@ func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacke
 	receive(payload, ep, r.sendUDP)
 
 	r.bp.Recycle(ipPkt.BaseDataBlock())
+
+	return nil
 }
 
-func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPacket) {
+func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPacket) error {
 	if icmpPkt.Type() != packet.ICMPTypePingRequest || icmpPkt.Code() != 0 {
 		r.bp.Recycle(ipPkt.BaseDataBlock())
-		return
+		return nil
 	}
 
 	s := make(net.IP, len(ipPkt.SourceAddress()))
@@ -183,10 +184,9 @@ func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPa
 	icmpPkt.SetCode(packet.ICMPTypePingResponse)
 	icmpPkt.SetType(0)
 
-	r.io.Outbound() <- io.PacketContext{
-		IPPkt:        ipPkt,
-		TransportPkt: icmpPkt,
-	}
+	icmpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
+
+	return r.encoder.Encode(ipPkt)
 }
 
 func (r *Redirect) sendUDP(payload []byte, endpoint *binding.Endpoint) error {
@@ -222,12 +222,9 @@ func (r *Redirect) sendUDP(payload []byte, endpoint *binding.Endpoint) error {
 			return err
 		}
 
-		r.io.Outbound() <- io.PacketContext{
-			IPPkt:        ipPkt,
-			TransportPkt: udpPkt,
+		if err := r.encoder.Encode(ipPkt); err != nil {
+			return err
 		}
-
-		return nil
 	}
 
 	return nil

@@ -6,98 +6,84 @@ import (
 	"github.com/kr328/tun2socket/tcpip/packet"
 )
 
-func startIPDecoder(input chan []byte, fragmentOutput chan packet.IPPacket, output chan packet.IPPacket, provider buf.BufferProvider, done *completable) {
-	go func() {
-		for {
-			select {
-			case buffer := <-input:
-				switch packet.DetectPacketVersion(buffer) {
-				case packet.IPv4:
-					pkt := packet.IPv4Packet(buffer)
-					if err := pkt.Verify(); err != nil {
-						provider.Recycle(buffer)
-						continue
-					}
-					if pkt.FragmentOffset() != 0 || pkt.Flags()&packet.IPv4MoreFragment != 0 {
-						select {
-						case fragmentOutput <- pkt:
-						default:
-						}
-					} else {
-						select {
-						case output <- pkt:
-						default:
-						}
-					}
-				}
-			case <-done.waiter():
-				return
-			}
-		}
-	}()
+type PacketDecoder struct {
+	device      TunDevice
+	mtu         int
+	provider    buf.BufferProvider
+	reassembler *fragment.Reassembler
 }
 
-func startReassembler(input chan packet.IPPacket, output chan packet.IPPacket, provider buf.BufferProvider, done *completable) {
-	go func() {
-		reassembler := fragment.NewReassemble(provider)
-
-		for {
-			select {
-			case pkt := <-input:
-				pkt, err := reassembler.InjectPacket(pkt)
-				if err != nil {
-					continue
-				}
-				if pkt != nil {
-					output <- pkt
-				}
-			case <-done.waiter():
-				return
-			}
-		}
-	}()
+func NewPacketDecoder(device TunDevice, mtu int, provider buf.BufferProvider) *PacketDecoder {
+	return &PacketDecoder{
+		device:      device,
+		mtu:         mtu,
+		provider:    provider,
+		reassembler: fragment.NewReassemble(provider),
+	}
 }
 
-func startTransportDecoder(input chan packet.IPPacket, output chan PacketContext, provider buf.BufferProvider, done *completable) {
-	go func() {
-		for {
-			select {
-			case ipPkt := <-input:
-				switch ipPkt.Protocol() {
-				case packet.UDP:
-					udpPkt := packet.UDPPacket(ipPkt.Payload())
-					if udpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-						provider.Recycle(ipPkt.BaseDataBlock())
-						continue
-					}
-					output <- PacketContext{
-						IPPkt:        ipPkt,
-						TransportPkt: udpPkt,
-					}
-				case packet.TCP:
-					tcpPkt := packet.TCPPacket(ipPkt.Payload())
-					if tcpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-						provider.Recycle(ipPkt.BaseDataBlock())
-						continue
-					}
-					output <- PacketContext{
-						IPPkt:        ipPkt,
-						TransportPkt: tcpPkt,
-					}
-				case packet.ICMP:
-					icmpPkt := packet.ICMPPacket(ipPkt.Payload())
-					if icmpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-						provider.Recycle(ipPkt.BaseDataBlock())
-						continue
-					}
-					output <- PacketContext{
-						IPPkt:        ipPkt,
-						TransportPkt: icmpPkt,
-					}
-				}
-			case <-done.waiter():
-				return
-			}
+func (decoder *PacketDecoder) Decode() (packet.IPPacket, packet.TransportPacket, error) {
+	for {
+		pkt, err := decoder.readNext()
+		if err != nil {
+			return nil, nil, err
+		} else if pkt == nil {
+			continue
 		}
-	}()
+
+		pkt, err = decoder.reassembler.InjectPacket(pkt)
+		if err != nil {
+			if pkt != nil {
+				decoder.provider.Recycle(pkt.BaseDataBlock())
+			}
+			continue
+		} else if pkt == nil {
+			continue
+		}
+
+		switch pkt.Protocol() {
+		case packet.TCP:
+			tcpPkt := packet.TCPPacket(pkt.Payload())
+			if tcpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()) != nil {
+				decoder.provider.Recycle(pkt.BaseDataBlock())
+				break
+			}
+			return pkt, tcpPkt, nil
+		case packet.UDP:
+			udpPkt := packet.UDPPacket(pkt.Payload())
+			if err := udpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
+				decoder.provider.Recycle(pkt.BaseDataBlock())
+				break
+			}
+			return pkt, udpPkt, nil
+		case packet.ICMP:
+			icmpPkt := packet.ICMPPacket(pkt.Payload())
+			if err := icmpPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
+				decoder.provider.Recycle(pkt.BaseDataBlock())
+				break
+			}
+			return pkt, icmpPkt, nil
+		default:
+			decoder.provider.Recycle(pkt.BaseDataBlock())
+		}
+	}
+}
+
+func (decoder *PacketDecoder) readNext() (packet.IPPacket, error) {
+	buffer := decoder.provider.Obtain(decoder.mtu)
+
+	n, err := decoder.device.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	data := buffer[:n]
+
+	switch packet.DetectPacketVersion(data) {
+	case packet.IPv4:
+		return packet.IPv4Packet(data), nil
+	default:
+		decoder.provider.Recycle(buffer)
+		return nil, nil
+	}
 }
