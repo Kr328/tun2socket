@@ -11,8 +11,8 @@ func startTransportEncoder(input chan PacketContext, output chan []byte, mtu int
 			select {
 			case ctx := <-input:
 				ctx.TransportPkt.ResetChecksum(ctx.IPPkt.SourceAddress(), ctx.IPPkt.TargetAddress())
-				fargments := fragment.IPPacketFragment(ctx.IPPkt, mtu, provider)
-				for _, p := range fargments {
+				pkts := fragment.IPPacketFragment(ctx.IPPkt, mtu, provider)
+				for _, p := range pkts {
 					select {
 					case output <- p.BaseDataBlock():
 					default:

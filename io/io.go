@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	defaultIOCache      = 32
-	defaultDecoderCount = 4
-	defaultEncoderCount = 4
+	defaultIOCache      = 64
+	defaultDecoderCount = 8
+	defaultEncoderCount = 8
 )
 
 type IO struct {
@@ -47,7 +47,7 @@ func (io *IO) Start() {
 		ipDecoder := make(chan packet.IPPacket, defaultIOCache)
 
 		startReader(io.device, io.mtu, io.provider, readerDecoder, io.done)
-		startReassemble(fragmentDecoder, ipDecoder, io.provider, io.done)
+		startReassembler(fragmentDecoder, ipDecoder, io.provider, io.done)
 
 		for i := 0; i < defaultDecoderCount; i++ {
 			startIPDecoder(readerDecoder, fragmentDecoder, ipDecoder, io.provider, io.done)

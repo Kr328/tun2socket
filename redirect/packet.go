@@ -32,9 +32,11 @@ func NewRedirect(device io.TunDevice, mtu int, gateway, mirror net.IP) *Redirect
 	}
 }
 
-func (r *Redirect) Exec() {
+func (r *Redirect) Start() {
 	r.io.Start()
+}
 
+func (r *Redirect) Exec() {
 	for {
 		select {
 		case ctx := <-r.io.Inbound():
