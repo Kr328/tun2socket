@@ -94,14 +94,14 @@ func (t *Tun2Socket) Close() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	if t.closed {
+	if t.closed || !t.initialed {
 		return
 	}
 
 	t.closed = true
 
-	_ = t.device.Close()
 	t.tcpRedirect.Close()
+	_ = t.device.Close()
 }
 
 func (t *Tun2Socket) SetTCPHandler(handler TCPHandler) {
