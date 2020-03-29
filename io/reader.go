@@ -15,6 +15,7 @@ func startReader(device TunDevice, mtu int, provider buf.BufferProvider, output 
 			select {
 			case output <- buffer[:n]:
 			default:
+				provider.Recycle(buffer)
 			}
 		}
 	}()

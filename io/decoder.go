@@ -37,14 +37,14 @@ func startIPDecoder(input chan []byte, fragmentOutput chan packet.IPPacket, outp
 	}()
 }
 
-func startReassembler(input chan packet.IPPacket, output chan packet.IPPacket, provider buf.BufferProvider, done *completable) {
+func startReassemble(input chan packet.IPPacket, output chan packet.IPPacket, provider buf.BufferProvider, done *completable) {
 	go func() {
-		reassembler := fragment.NewReassemble(provider)
+		reassemble := fragment.NewReassemble(provider)
 
 		for {
 			select {
 			case pkt := <-input:
-				pkt, err := reassembler.InjectPacket(pkt)
+				pkt, err := reassemble.InjectPacket(pkt)
 				if err != nil {
 					continue
 				}
@@ -63,37 +63,22 @@ func startTransportDecoder(input chan packet.IPPacket, output chan PacketContext
 		for {
 			select {
 			case ipPkt := <-input:
+				var tPkt packet.TransportPacket
 				switch ipPkt.Protocol() {
 				case packet.UDP:
-					udpPkt := packet.UDPPacket(ipPkt.Payload())
-					if udpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-						provider.Recycle(ipPkt.BaseDataBlock())
-						continue
-					}
-					output <- PacketContext{
-						IPPkt:        ipPkt,
-						TransportPkt: udpPkt,
-					}
+					tPkt = packet.UDPPacket(ipPkt.Payload())
 				case packet.TCP:
-					tcpPkt := packet.TCPPacket(ipPkt.Payload())
-					if tcpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-						provider.Recycle(ipPkt.BaseDataBlock())
-						continue
-					}
-					output <- PacketContext{
-						IPPkt:        ipPkt,
-						TransportPkt: tcpPkt,
-					}
+					tPkt = packet.TCPPacket(ipPkt.Payload())
 				case packet.ICMP:
-					icmpPkt := packet.ICMPPacket(ipPkt.Payload())
-					if icmpPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
-						provider.Recycle(ipPkt.BaseDataBlock())
-						continue
-					}
-					output <- PacketContext{
-						IPPkt:        ipPkt,
-						TransportPkt: icmpPkt,
-					}
+					tPkt = packet.ICMPPacket(ipPkt.Payload())
+				}
+				if tPkt.Verify(ipPkt.SourceAddress(), ipPkt.TargetAddress()) != nil {
+					provider.Recycle(ipPkt.BaseDataBlock())
+					continue
+				}
+				output <- PacketContext{
+					IPPkt:        ipPkt,
+					TransportPkt: tPkt,
 				}
 			case <-done.waiter():
 				return

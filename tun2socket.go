@@ -9,14 +9,10 @@ import (
 )
 
 const (
-	packetHandlerCount = 8
+	packetHandlerCount = 4
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
-type Allocator = redirect.UDPAllocator
-type UDPHandler = redirect.UDPReceiver
-type UDPWriter = redirect.UDPSender
-type TunDevice = io.TunDevice
 
 type Tun2Socket struct {
 	initial sync.Once
@@ -30,8 +26,8 @@ type Tun2Socket struct {
 	tcpRedirect    *redirect.TCPRedirect
 
 	tcpHandler TCPHandler
-	udpHandler UDPHandler
-	allocator  Allocator
+	udpHandler redirect.UDPReceiver
+	allocator  redirect.UDPAllocator
 }
 
 type fakeTCPConn struct {
@@ -55,7 +51,7 @@ func (t *fakeTCPConn) RemoteAddr() net.Addr {
 	}
 }
 
-func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
+func NewTun2Socket(device io.TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
 	return &Tun2Socket{
 		gateway:        gateway4,
 		mirror:         mirror4,
@@ -92,13 +88,13 @@ func (t *Tun2Socket) SetTCPHandler(handler TCPHandler) {
 	t.tcpHandler = handler
 }
 
-func (t *Tun2Socket) SetUDPHandler(handler UDPHandler) {
+func (t *Tun2Socket) SetUDPHandler(handler redirect.UDPReceiver) {
 	t.udpHandler = handler
 
 	t.resetUDPHandler()
 }
 
-func (t *Tun2Socket) SetAllocator(allocator Allocator) {
+func (t *Tun2Socket) SetUDPAllocator(allocator redirect.UDPAllocator) {
 	t.allocator = allocator
 
 	t.resetUDPHandler()
@@ -160,8 +156,6 @@ func (t *Tun2Socket) startTCPRedirect() {
 }
 
 func (t *Tun2Socket) startRedirect() {
-	t.packetRedirect.Start()
-
 	for i := 0; i < packetHandlerCount; i++ {
 		go func() {
 			t.packetRedirect.Exec()
