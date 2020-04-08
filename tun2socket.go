@@ -2,6 +2,7 @@ package tun2socket
 
 import (
 	"github.com/kr328/tun2socket/binding"
+	L "github.com/kr328/tun2socket/log"
 	"github.com/kr328/tun2socket/redirect"
 	"github.com/kr328/tun2socket/tcpip/buf"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 type TunDevice = io.ReadWriteCloser
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
+type ClosedHandler func()
 
 type Tun2Socket struct {
 	lock      sync.Mutex
@@ -26,9 +28,12 @@ type Tun2Socket struct {
 	packetRedirect *redirect.Redirect
 	tcpRedirect    *redirect.TCPRedirect
 
-	tcpHandler TCPHandler
-	udpHandler redirect.UDPReceiver
-	allocator  redirect.UDPAllocator
+	closedHandler ClosedHandler
+	tcpHandler    TCPHandler
+	udpHandler    redirect.UDPReceiver
+	allocator     redirect.UDPAllocator
+
+	log L.Logger
 }
 
 type fakeTCPConn struct {
@@ -52,17 +57,20 @@ func (t *fakeTCPConn) RemoteAddr() net.Addr {
 	}
 }
 
-func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *Tun2Socket {
+func NewTun2Socket(device TunDevice, mtu int, gateway net.IP, mirror net.IP) *Tun2Socket {
 	p := buf.NewPacketBufferProvider(mtu)
 
 	return &Tun2Socket{
 		provider:       p,
 		mtu:            mtu,
 		device:         device,
-		gateway:        gateway4,
-		mirror:         mirror4,
-		packetRedirect: redirect.NewRedirect(p, mtu, gateway4, mirror4),
-		tcpRedirect:    redirect.NewTCPRedirect(gateway4, mirror4),
+		gateway:        gateway,
+		mirror:         mirror,
+		packetRedirect: redirect.NewRedirect(p, mtu, gateway, mirror),
+		tcpRedirect:    redirect.NewTCPRedirect(gateway, mirror),
+		closedHandler: func() {
+
+		},
 		tcpHandler: func(conn net.Conn, endpoint *binding.Endpoint) {
 			_ = conn.Close()
 		},
@@ -71,6 +79,7 @@ func NewTun2Socket(device TunDevice, mtu int, gateway4 net.IP, mirror4 net.IP) *
 		allocator: func(length int) []byte {
 			return make([]byte, length)
 		},
+		log: &L.DefaultLogger{},
 	}
 }
 
@@ -102,6 +111,18 @@ func (t *Tun2Socket) Close() {
 
 	t.tcpRedirect.Close()
 	_ = t.device.Close()
+}
+
+func (t *Tun2Socket) SetLogger(logger L.Logger) {
+	if logger == nil {
+		t.log = &L.DefaultLogger{}
+	} else {
+		t.log = logger
+	}
+}
+
+func (t *Tun2Socket) SetClosedHandler(handler ClosedHandler) {
+	t.closedHandler = handler
 }
 
 func (t *Tun2Socket) SetTCPHandler(handler TCPHandler) {
@@ -139,8 +160,9 @@ func (t *Tun2Socket) resetUDPHandler() {
 func (t *Tun2Socket) startReader() {
 	go func() {
 		defer t.packetRedirect.Close()
+		defer t.log.I("Tun reader exited")
 
-		for {
+		for !t.closed {
 			buffer := t.provider.Obtain(t.mtu)
 
 			n, err := t.device.Read(buffer)
@@ -162,35 +184,40 @@ func (t *Tun2Socket) startReader() {
 
 func (t *Tun2Socket) startWriter() {
 	go func() {
-		for {
+		defer t.closedHandler()
+		defer t.log.I("Tun writer exited")
+
+		for !t.closed {
 			buffer, ok := <-t.packetRedirect.Outbound()
 			if !ok {
 				return
 			}
 
-			t.lock.Lock()
-			if t.closed {
-				return
-			}
 			_, err := t.device.Write(buffer)
-			t.lock.Unlock()
 			if err != nil {
-				return
+				t.log.W("Write %d bytes to tun device failure: %s", len(buffer), err.Error())
 			}
+
+			t.provider.Recycle(buffer)
 		}
 	}()
 }
 
 func (t *Tun2Socket) startTCPRedirect() {
 	go func() {
+		defer t.log.I("TCP redirect exited")
+
 		for !t.closed {
 			port, err := t.tcpRedirect.Listen()
 			if err != nil {
+				t.log.E("Listen TCP redirect failure", err.Error())
 				t.Close()
 				return
 			}
 
 			t.packetRedirect.ResetTCP(uint16(port))
+
+			t.log.I("Listen TCP redirect %d", port)
 
 			for {
 				conn, addr, err := t.tcpRedirect.Accept()
@@ -222,9 +249,8 @@ func (t *Tun2Socket) startTCPRedirect() {
 
 func (t *Tun2Socket) startRedirect() {
 	go func() {
-		if err := t.packetRedirect.Exec(); err != nil {
-			t.Close()
-			return
-		}
+		t.packetRedirect.Exec()
+		t.Close()
+		t.log.I("Packet redirect exited")
 	}()
 }

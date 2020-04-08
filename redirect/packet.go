@@ -46,11 +46,11 @@ func NewRedirect(provider buf.BufferProvider, mtu int, gateway, mirror net.IP) *
 	}
 }
 
-func (r *Redirect) Exec() error {
+func (r *Redirect) Exec() {
 	for {
 		data, ok := <-r.inbound
 		if !ok {
-			return nil
+			return
 		}
 
 		ipPkt, tPkt := r.decoder.Decode(data)
