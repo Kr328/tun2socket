@@ -57,6 +57,7 @@ func (t *fakeTCPConn) RemoteAddr() net.Addr {
 	}
 }
 
+//noinspection GoUnusedExportedFunction
 func NewTun2Socket(device TunDevice, mtu int, gateway net.IP, mirror net.IP) *Tun2Socket {
 	p := buf.NewPacketBufferProvider(mtu)
 
