@@ -24,6 +24,36 @@ func (pkt TCPPacket) SetTargetPort(port uint16) {
 	binary.BigEndian.PutUint16(pkt[2:], port)
 }
 
+func (pkt TCPPacket) Verify(sourceAddress net.IP, targetAddress net.IP) error {
+	var checksum [2]byte
+	checksum[0] = pkt[16]
+	checksum[1] = pkt[17]
+
+	// reset checksum
+	pkt[16] = 0
+	pkt[17] = 0
+
+	// restore checksum
+	defer func() {
+		pkt[16] = checksum[0]
+		pkt[17] = checksum[1]
+	}()
+
+	// check checksum
+	s := uint32(0)
+	s += sum.Sum(sourceAddress)
+	s += sum.Sum(targetAddress)
+	s += uint32(TCP)
+	s += uint32(len(pkt))
+
+	check := sum.Checksum(s, pkt)
+	if checksum[0] != check[0] || checksum[1] != check[1] {
+		return ErrInvalidChecksum
+	}
+
+	return nil
+}
+
 func (pkt TCPPacket) ResetChecksum(sourceAddress net.IP, targetAddress net.IP) {
 	pkt[16] = 0
 	pkt[17] = 0

@@ -12,6 +12,39 @@ const (
 
 type UDPPacket []byte
 
+func (pkt UDPPacket) Verify(sourceAddress net.IP, targetAddress net.IP) error {
+	if pkt.Length() < uint16(len(pkt)) {
+		return ErrInvalidLength
+	}
+
+	if pkt[6] != 0 || pkt[7] != 0 {
+		var checksum [2]byte
+		checksum[0] = pkt[6]
+		checksum[1] = pkt[7]
+
+		pkt[6] = 0
+		pkt[7] = 0
+
+		defer func() {
+			pkt[6] = checksum[0]
+			pkt[7] = checksum[1]
+		}()
+
+		s := uint32(0)
+		s += sum.Sum(sourceAddress)
+		s += sum.Sum(targetAddress)
+		s += uint32(UDP)
+		s += uint32(len(pkt))
+
+		check := sum.Checksum(s, pkt)
+		if check[0] != checksum[0] || check[1] != checksum[1] {
+			return ErrInvalidChecksum
+		}
+	}
+
+	return nil
+}
+
 func (pkt UDPPacket) ResetChecksum(sourceAddress net.IP, targetAddress net.IP) {
 	pkt[6] = 0
 	pkt[7] = 0
