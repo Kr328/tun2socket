@@ -1,6 +1,6 @@
 # Tun2Socket
 
-A utilize that use system tcpip stack to forward packet from tun device.
+A utilize that use kernel tcpip stack to forward packet from tun device.
 
 ### Feature
 
