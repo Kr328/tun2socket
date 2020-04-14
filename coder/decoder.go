@@ -31,6 +31,11 @@ func (decoder *PacketDecoder) Decode(data []byte) (packet.IPPacket, packet.Trans
 		return nil, nil
 	}
 
+	if err := pkt.Verify(); err != nil {
+		decoder.provider.Recycle(pkt.BaseDataBlock())
+		return nil, nil
+	}
+
 	pkt, err := decoder.reassembler.InjectPacket(pkt)
 	if err != nil {
 		if pkt != nil {
@@ -50,6 +55,11 @@ func (decoder *PacketDecoder) Decode(data []byte) (packet.IPPacket, packet.Trans
 	case packet.ICMP:
 		tPkt = packet.ICMPPacket(pkt.Payload())
 	default:
+		decoder.provider.Recycle(pkt.BaseDataBlock())
+		return nil, nil
+	}
+
+	if err := tPkt.Verify(pkt.SourceAddress(), pkt.TargetAddress()); err != nil {
 		decoder.provider.Recycle(pkt.BaseDataBlock())
 		return nil, nil
 	}
