@@ -6,6 +6,18 @@ import (
 	"net"
 )
 
+const (
+	TCPFin uint16 = 1 << 0
+	TCPSyn uint16 = 1 << 1
+	TCPRst uint16 = 1 << 2
+	TCPPuh uint16 = 1 << 3
+	TCPAck uint16 = 1 << 4
+	TCPUrg uint16 = 1 << 5
+	TCPEce uint16 = 1 << 6
+	TCPEwr uint16 = 1 << 7
+	TCPNs  uint16 = 1 << 8
+)
+
 type TCPPacket []byte
 
 func (pkt TCPPacket) SourcePort() uint16 {
@@ -22,6 +34,10 @@ func (pkt TCPPacket) SetSourcePort(port uint16) {
 
 func (pkt TCPPacket) SetTargetPort(port uint16) {
 	binary.BigEndian.PutUint16(pkt[2:], port)
+}
+
+func (pkt TCPPacket) Flags() uint16 {
+	return uint16(pkt[13] | (pkt[12] & 0x1))
 }
 
 func (pkt TCPPacket) Verify(sourceAddress net.IP, targetAddress net.IP) error {

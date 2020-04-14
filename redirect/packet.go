@@ -146,6 +146,11 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 
 		bind := r.tcpMapper.GetBindingByEndpoint(ep)
 		if bind == nil {
+			if tcpPkt.Flags() != packet.TCPSyn {
+				r.provider.Recycle(ipPkt.BaseDataBlock())
+				return
+			}
+
 			bind = r.tcpMapper.PutBinding(&binding.Binding{
 				Endpoint: ep,
 				Port:     r.tcpMapper.FindFreePort(),
