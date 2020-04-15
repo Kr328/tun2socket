@@ -1,16 +1,21 @@
 package binding
 
+const (
+	minimumPort = 20000
+	maximumPort = 65535
+)
+
 type PortPool struct {
-	current uint16
+	offset uint32
 }
 
 func NewPortPool() *PortPool {
 	return &PortPool{
-		current: 0,
+		offset: minimumPort,
 	}
 }
 
 func (pool *PortPool) Next() uint16 {
-	pool.current = uint16(uint32(pool.current+1) % 65536)
-	return pool.current
+	pool.offset = (pool.offset + 1) % (maximumPort - minimumPort)
+	return minimumPort + uint16(pool.offset)
 }

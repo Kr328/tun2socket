@@ -21,8 +21,8 @@ func NewMapper() *Mapper {
 	return &Mapper{
 		pool:      NewPortPool(),
 		bindings:  list.New(),
-		endpoints: map[endpointKey]*list.Element{},
-		ports:     map[uint16]*list.Element{},
+		endpoints: make(map[endpointKey]*list.Element, defaultRecordMaxSize*2),
+		ports:     make(map[uint16]*list.Element, defaultRecordMaxSize*2),
 	}
 }
 
