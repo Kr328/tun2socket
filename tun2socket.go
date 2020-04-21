@@ -111,6 +111,7 @@ func (t *Tun2Socket) Close() {
 	t.closed = true
 
 	t.tcpRedirect.Close()
+	_, _, _ = t.tcpRedirect.Accept() // Wait for closing
 	_ = t.device.Close()
 }
 
@@ -220,7 +221,7 @@ func (t *Tun2Socket) startTCPRedirect() {
 
 			t.log.I("Listen TCP redirect %d", port)
 
-			for {
+			for !t.closed {
 				conn, addr, err := t.tcpRedirect.Accept()
 				if err != nil {
 					break
