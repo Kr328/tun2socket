@@ -51,6 +51,7 @@ func (t *TCPRedirect) Accept() (*net.TCPConn, *net.TCPAddr, error) {
 	addr := conn.RemoteAddr().(*net.TCPAddr)
 
 	if !addr.IP.Equal(t.mirror) {
+		_ = conn.Close()
 		return nil, nil, ErrInvalidSource
 	}
 
