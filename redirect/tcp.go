@@ -1,7 +1,12 @@
 package redirect
 
 import (
+	"errors"
 	"net"
+)
+
+var (
+	ErrInvalidSource = errors.New("invalid source")
 )
 
 type TCPRedirect struct {
@@ -23,11 +28,11 @@ func (t *TCPRedirect) Listen() (int, error) {
 	}
 
 	tcpAddr := &net.TCPAddr{
-		IP:   t.gateway,
+		IP:   net.IPv4zero,
 		Port: 0,
 		Zone: "",
 	}
-	tcp, err := net.ListenTCP("tcp", tcpAddr)
+	tcp, err := net.ListenTCP("tcp4", tcpAddr)
 	if err != nil {
 		return 0, err
 	}
@@ -44,6 +49,10 @@ func (t *TCPRedirect) Accept() (*net.TCPConn, *net.TCPAddr, error) {
 	}
 
 	addr := conn.RemoteAddr().(*net.TCPAddr)
+
+	if !addr.IP.Equal(t.mirror) {
+		return nil, nil, ErrInvalidSource
+	}
 
 	return conn, addr, nil
 }
