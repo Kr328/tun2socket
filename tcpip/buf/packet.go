@@ -24,7 +24,7 @@ func NewPacketBufferProvider(mtu int) *PacketBufferProvider {
 	}
 }
 
-func (p PacketBufferProvider) Obtain(length int) []byte {
+func (p *PacketBufferProvider) Obtain(length int) []byte {
 	if length <= p.mtu {
 		return p.mtuPool.Get().([]byte)[:length]
 	} else if length <= maxPacketSize {
@@ -34,7 +34,7 @@ func (p PacketBufferProvider) Obtain(length int) []byte {
 	return make([]byte, length)
 }
 
-func (p PacketBufferProvider) Recycle(buffer []byte) {
+func (p *PacketBufferProvider) Recycle(buffer []byte) {
 	c := cap(buffer)
 
 	if c == p.mtu {
