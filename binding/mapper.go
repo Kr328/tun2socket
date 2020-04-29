@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	defaultRecordMaxSize = 2048
+	defaultRecordMaxSize = 4096
 )
 
 type Mapper struct {
