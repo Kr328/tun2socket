@@ -174,12 +174,7 @@ func (t *Tun2Socket) startReader() {
 
 			buffer = buffer[:n]
 
-			select {
-			case t.packetRedirect.Inbound() <- buffer:
-				continue
-			default:
-				t.provider.Recycle(buffer)
-			}
+			t.packetRedirect.Inbound() <- buffer
 		}
 	}()
 }

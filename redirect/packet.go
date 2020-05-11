@@ -92,20 +92,20 @@ func (r *Redirect) Close() {
 	close(r.outbound)
 }
 
-func (r *Redirect) FindEndpointByPort(port uint16) *binding.Endpoint {
-	bind := r.tcpMapper.GetBindingByPort(port)
-	if bind == nil {
-		return nil
-	}
-	return bind.Endpoint
-}
-
 func (r *Redirect) Inbound() chan []byte {
 	return r.inbound
 }
 
 func (r *Redirect) Outbound() chan []byte {
 	return r.outbound
+}
+
+func (r *Redirect) FindEndpointByPort(port uint16) *binding.Endpoint {
+	bind := r.tcpMapper.GetBindingByPort(port)
+	if bind == nil {
+		return nil
+	}
+	return bind.Endpoint
 }
 
 func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) {
@@ -174,12 +174,7 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 	}
 
 	for _, d := range data {
-		select {
-		case r.outbound <- d:
-			continue
-		default:
-			r.provider.Recycle(d)
-		}
+		r.outbound <- d
 	}
 }
 
@@ -238,12 +233,7 @@ func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPa
 	}
 
 	for _, d := range data {
-		select {
-		case r.outbound <- d:
-			continue
-		default:
-			r.provider.Recycle(d)
-		}
+		r.outbound <- d
 	}
 }
 
@@ -289,12 +279,7 @@ func (r *Redirect) SendUDP(payload []byte, endpoint *binding.Endpoint) error {
 		}
 
 		for _, d := range data {
-			select {
-			case r.outbound <- d:
-				continue
-			default:
-				r.provider.Recycle(d)
-			}
+			r.outbound <- d
 		}
 	}
 
