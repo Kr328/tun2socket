@@ -5,6 +5,10 @@ import (
 	"net"
 )
 
+const (
+	IPPacketMaxLength = 65535
+)
+
 type Version byte
 type Protocol byte
 

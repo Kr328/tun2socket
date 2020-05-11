@@ -1,7 +1,7 @@
 package fragment
 
 import (
-	"container/list"
+	"container/heap"
 	"errors"
 	"github.com/kr328/tun2socket/tcpip/buf"
 	"github.com/kr328/tun2socket/tcpip/packet"
@@ -13,23 +13,28 @@ var (
 )
 
 const (
-	defaultIPFragmentTimeout = time.Second * 120
-	maxReassemblingPacket    = 1024
+	defaultIPFragmentTimeout   = time.Second * 120
+	defaultIPFragmentQueueSize = 32
+	maxReassemblingPacket      = 1024
 )
 
-type tracker struct {
-	*list.List
-	ttl time.Time
+type packetHeap []packet.IPPacket
+
+type packetTracker struct {
+	ttl        time.Time
+	queue      packetHeap
+	merged     packet.IPPacket
+	nextOffset uint16
 }
 
 type Reassembler struct {
-	trackers map[uint16]*tracker
+	trackers map[uint16]*packetTracker
 	provider buf.BufferProvider
 }
 
 func NewReassemble(provider buf.BufferProvider) *Reassembler {
 	return &Reassembler{
-		trackers: map[uint16]*tracker{},
+		trackers: map[uint16]*packetTracker{},
 		provider: provider,
 	}
 }
@@ -53,99 +58,112 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 		return nil, ErrReassembleBlocked
 	}
 
-	tacker := r.trackers[pkt.Identification()]
-	if tacker == nil {
+	t := r.trackers[pkt.Identification()]
+	if t == nil {
 		if len(r.trackers) > maxReassemblingPacket {
 			return nil, ErrReassembleBlocked
 		}
 
-		tacker = &tracker{
-			List: list.New(),
-			ttl:  time.Now().Add(defaultIPFragmentTimeout),
+		t = &packetTracker{
+			ttl:    time.Time{},
+			queue:  make([]packet.IPPacket, 0, defaultIPFragmentQueueSize),
+			merged: packet.IPv4Packet(r.provider.Obtain(packet.IPPacketMaxLength)),
 		}
 
-		tacker.PushBack(pkt)
+		r.trackers[pkt.Identification()] = t
 
-		r.trackers[pkt.Identification()] = tacker
+		heap.Init(&t.queue)
 
-		return nil, nil
+		m := t.merged.(packet.IPv4Packet)
+
+		packet.SetPacketVersion(m, packet.IPv4)
+		m.SetPacketLength(packet.IPPacketMaxLength)
+		m.SetHeaderLength(pkt.HeaderLength())
+		m.SetTypeOfService(pkt.TypeOfService())
+		m.SetIdentification(pkt.Identification())
+		m.SetFragmentOffset(0)
+		m.SetFlags(0)
+		m.SetTimeToLive(pkt.TimeToLive())
+		m.SetProtocol(pkt.Protocol())
+		copy(m.SourceAddress(), pkt.SourceAddress())
+		copy(m.TargetAddress(), pkt.TargetAddress())
+		copy(m.Options(), pkt.Options())
 	}
 
-	tacker.ttl = time.Now().Add(defaultIPFragmentTimeout)
+	heap.Push(&t.queue, pkt)
 
-	inserted := false
-	for iterator := tacker.Back(); iterator != nil; iterator = iterator.Prev() {
-		p, ok := iterator.Value.(packet.IPv4Packet)
-		if !ok {
+	t.ttl = time.Now().Add(defaultIPFragmentTimeout)
+
+	for {
+		if len(t.queue) <= 0 {
 			return nil, nil
 		}
 
-		if p.FragmentOffset() < pkt.FragmentOffset() {
-			tacker.List.InsertAfter(pkt, iterator)
-			inserted = true
-			break
-		}
-	}
-	if !inserted {
-		tacker.PushFront(pkt)
-	}
+		n := t.queue[0].(packet.IPv4Packet)
+		m := t.merged.(packet.IPv4Packet)
 
-	expectedOffset := uint16(0)
-	completed := false
-	for iterator := tacker.Front(); iterator != nil; iterator = iterator.Next() {
-		pkt, ok := iterator.Value.(packet.IPv4Packet)
-		if !ok {
-			return nil, nil
-		}
+		if n.FragmentOffset() == t.nextOffset {
+			copy(m.Payload()[t.nextOffset:], n.Payload())
+			t.nextOffset += uint16(len(n.Payload()))
 
-		if pkt.FragmentOffset() == expectedOffset {
-			expectedOffset += uint16(len(pkt.Payload()))
-			completed = pkt.Flags()&packet.IPv4MoreFragment == 0
+			if n.Flags()&packet.IPv4MoreFragment == 0 {
+				break
+			}
+		} else if n.FragmentOffset() < t.nextOffset {
+			// Drop duplicate packet
 		} else {
 			return nil, nil
 		}
+
+		heap.Pop(&t.queue)
+		r.provider.Recycle(n)
 	}
 
-	if !completed {
-		return nil, nil
-	}
-
-	result := packet.IPv4Packet(r.provider.Obtain(int(pkt.HeaderLength() + expectedOffset)))
-	packet.SetPacketVersion(result, packet.IPv4)
-	result.SetHeaderLength(pkt.HeaderLength())
-	result.SetTypeOfService(pkt.TypeOfService())
-	result.SetPacketLength(pkt.HeaderLength() + expectedOffset)
-	result.SetIdentification(pkt.Identification())
-	result.SetFragmentOffset(0)
-	result.SetFlags(0)
-	result.SetTimeToLive(pkt.TimeToLive())
-	result.SetProtocol(pkt.Protocol())
-	copy(result.SourceAddress(), pkt.SourceAddress())
-	copy(result.TargetAddress(), pkt.TargetAddress())
-	copy(result.Options(), pkt.Options())
-
-	// Merge fragments
-	for iterator := tacker.Front(); iterator != nil; iterator = iterator.Next() {
-		pkt := iterator.Value.(packet.IPv4Packet)
-		payload := result.Payload()
-
-		copy(payload[pkt.FragmentOffset():], pkt.Payload())
-
-		r.provider.Recycle(pkt)
-	}
+	t.merged.(packet.IPv4Packet).SetPacketLength(pkt.HeaderLength() + t.nextOffset)
 
 	delete(r.trackers, pkt.Identification())
 
-	return result, nil
+	return t.merged, nil
 }
 
 func (r *Reassembler) clearExpiredTackers() {
 	for k, t := range r.trackers {
 		if t.ttl.Before(time.Now()) {
-			for iterator := t.Front(); iterator != nil; iterator = iterator.Next() {
-				r.provider.Recycle(iterator.Value.(packet.IPPacket).BaseDataBlock())
+			for _, pkt := range t.queue {
+				r.provider.Recycle(pkt.BaseDataBlock())
 			}
 			delete(r.trackers, k)
 		}
 	}
+}
+
+func (p packetHeap) Len() int {
+	return len(p)
+}
+
+func (p packetHeap) Less(a, b int) bool {
+	pA := p[a]
+	pB := p[b]
+
+	if v4, ok := pA.(packet.IPv4Packet); ok {
+		return v4.FragmentOffset() < pB.(packet.IPv4Packet).FragmentOffset()
+	}
+
+	return false
+}
+
+func (p packetHeap) Swap(a, b int) {
+	p[a], p[b] = p[b], p[a]
+}
+
+func (p *packetHeap) Push(x interface{}) {
+	*p = append(*p, x.(packet.IPPacket))
+}
+
+func (p *packetHeap) Pop() interface{} {
+	old := *p
+	n := len(old)
+	x := old[n-1]
+	*p = old[0 : n-1]
+	return x
 }

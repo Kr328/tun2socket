@@ -1,9 +1,8 @@
 package buf
 
-import "sync"
-
-const (
-	maxPacketSize = 65535
+import (
+	"github.com/kr328/tun2socket/tcpip/packet"
+	"sync"
 )
 
 type PacketBufferProvider struct {
@@ -19,7 +18,7 @@ func NewPacketBufferProvider(mtu int) *PacketBufferProvider {
 			return make([]byte, mtu)
 		}},
 		largePool: sync.Pool{New: func() interface{} {
-			return make([]byte, maxPacketSize)
+			return make([]byte, packet.IPPacketMaxLength)
 		}},
 	}
 }
@@ -27,7 +26,7 @@ func NewPacketBufferProvider(mtu int) *PacketBufferProvider {
 func (p *PacketBufferProvider) Obtain(length int) []byte {
 	if length <= p.mtu {
 		return p.mtuPool.Get().([]byte)[:length]
-	} else if length <= maxPacketSize {
+	} else if length <= packet.IPPacketMaxLength {
 		return p.largePool.Get().([]byte)[:length]
 	}
 
@@ -39,7 +38,7 @@ func (p *PacketBufferProvider) Recycle(buffer []byte) {
 
 	if c == p.mtu {
 		p.mtuPool.Put(buffer[:c])
-	} else if c == maxPacketSize {
+	} else if c == packet.IPPacketMaxLength {
 		p.largePool.Put(buffer[:c])
 	}
 }
