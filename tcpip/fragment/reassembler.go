@@ -102,7 +102,7 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 		n := t.queue[0].(packet.IPv4Packet)
 		m := t.merged.(packet.IPv4Packet)
 
-		if n.FragmentOffset() == t.nextOffset {
+		if n.FragmentOffset() == t.nextOffset && int(t.nextOffset)+len(n.Payload()) <= packet.IPPacketMaxLength {
 			copy(m.Payload()[t.nextOffset:], n.Payload())
 			t.nextOffset += uint16(len(n.Payload()))
 
