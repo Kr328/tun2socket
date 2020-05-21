@@ -32,7 +32,7 @@ type Reassembler struct {
 	provider buf.BufferProvider
 }
 
-func NewReassemble(provider buf.BufferProvider) *Reassembler {
+func NewReassembler(provider buf.BufferProvider) *Reassembler {
 	return &Reassembler{
 		trackers: map[uint16]*packetTracker{},
 		provider: provider,

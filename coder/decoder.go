@@ -16,7 +16,7 @@ func NewPacketDecoder(mtu int, provider buf.BufferProvider) *PacketDecoder {
 	return &PacketDecoder{
 		mtu:         mtu,
 		provider:    provider,
-		reassembler: fragment.NewReassemble(provider),
+		reassembler: fragment.NewReassembler(provider),
 	}
 }
 
