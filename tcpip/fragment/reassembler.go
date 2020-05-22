@@ -5,6 +5,8 @@ import (
 	"errors"
 	"github.com/kr328/tun2socket/tcpip/buf"
 	"github.com/kr328/tun2socket/tcpip/packet"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -27,15 +29,31 @@ type packetTracker struct {
 	nextOffset uint16
 }
 
-type Reassembler struct {
+type reassembler struct {
+	stop     chan struct{}
+	lock     sync.Mutex
 	trackers map[uint16]*packetTracker
 	provider buf.BufferProvider
 }
 
-func NewReassembler(provider buf.BufferProvider) *Reassembler {
+type Reassembler struct {
+	*reassembler
+}
+
+func NewReassembler(provider buf.BufferProvider) (r *Reassembler) {
+	defer func() {
+		runtime.SetFinalizer(r, func() {
+			close(r.stop)
+		})
+
+		r.start()
+	}()
+
 	return &Reassembler{
-		trackers: map[uint16]*packetTracker{},
-		provider: provider,
+		reassembler: &reassembler{
+			trackers: map[uint16]*packetTracker{},
+			provider: provider,
+		},
 	}
 }
 
@@ -47,16 +65,17 @@ func (r *Reassembler) InjectPacket(pkt packet.IPPacket) (packet.IPPacket, error)
 	return nil, nil
 }
 
-func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, error) {
+func (r *reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, error) {
 	if pkt.Flags()&packet.IPv4MoreFragment == 0 && pkt.FragmentOffset() == 0 {
 		return pkt, nil
 	}
 
-	r.clearExpiredTackers()
-
 	if pkt.Flags()&packet.IPv4DontFragment != 0 {
 		return nil, ErrReassembleBlocked
 	}
+
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
 	t := r.trackers[pkt.Identification()]
 	if t == nil {
@@ -126,7 +145,10 @@ func (r *Reassembler) injectIPv4Packet(pkt packet.IPv4Packet) (packet.IPPacket, 
 	return t.merged, nil
 }
 
-func (r *Reassembler) clearExpiredTackers() {
+func (r *reassembler) clearExpiredTackers() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	for k, t := range r.trackers {
 		if t.ttl.Before(time.Now()) {
 			for _, pkt := range t.queue {
@@ -135,6 +157,21 @@ func (r *Reassembler) clearExpiredTackers() {
 			delete(r.trackers, k)
 		}
 	}
+}
+
+func (r *reassembler) start() {
+	go func() {
+		ticker := time.NewTicker(time.Second * 30)
+
+		for {
+			select {
+			case <-ticker.C:
+				r.clearExpiredTackers()
+			case <-r.stop:
+				return
+			}
+		}
+	}()
 }
 
 func (p packetHeap) Len() int {

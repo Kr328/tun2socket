@@ -1,89 +1,69 @@
 package fragment
 
 import (
-	CRand "crypto/rand"
-	"encoding/binary"
 	"github.com/kr328/tun2socket/tcpip/buf"
 	"github.com/kr328/tun2socket/tcpip/packet"
-	"math/rand"
+	"sync/atomic"
 )
+
+var identification uint32 = 1
 
 func IPPacketFragment(pkt packet.IPPacket, mtu int, provider buf.BufferProvider) []packet.IPPacket {
 	switch pkt := pkt.(type) {
 	case packet.IPv4Packet:
-		maxPayloadSize := mtu - int(pkt.HeaderLength())
-		maxPayloadSize = maxPayloadSize - maxPayloadSize%8
-		fragmentCount := calculateFragmentCount(len(pkt.Payload()), maxPayloadSize)
-		fragments := make([]packet.IPPacket, fragmentCount)
-		identification := generateIdentification()
-
-		if fragmentCount == 1 {
-			pkt.SetFragmentOffset(0)
-			pkt.SetFlags(0)
-			if err := pkt.ResetChecksum(); err != nil {
-				provider.Recycle(pkt)
-				return fragments[0:0]
-			}
-
-			fragments[0] = pkt
-
-			return fragments
+		if len(pkt) <= mtu {
+			return []packet.IPPacket{pkt}
 		}
 
-		for i := 0; i < fragmentCount; i++ {
-			packetLength := min(len(pkt.Payload())-i*maxPayloadSize, maxPayloadSize) + int(pkt.HeaderLength())
+		payloadSize := mtu - int(pkt.HeaderLength())
+		payloadSize = payloadSize - payloadSize%8
+		id := atomic.AddUint32(&identification, 1)
+		count := calculateFragmentCount(len(pkt.Payload()), payloadSize)
+		result := make([]packet.IPPacket, count)
+
+		for i := 0; i < count; i++ {
+			packetLength := min(len(pkt.Payload())-i*payloadSize, payloadSize) + int(pkt.HeaderLength())
 
 			p := packet.IPv4Packet(provider.Obtain(packetLength))
 			packet.SetPacketVersion(p, packet.IPv4)
 			p.SetHeaderLength(pkt.HeaderLength())
 			p.SetTypeOfService(pkt.TypeOfService())
 			p.SetPacketLength(uint16(packetLength))
-			p.SetIdentification(identification)
-			p.SetFragmentOffset(uint32(i * maxPayloadSize))
+			p.SetIdentification(uint16(id))
+			p.SetFragmentOffset(uint32(i * payloadSize))
 			p.SetTimeToLive(pkt.TimeToLive())
 			p.SetProtocol(pkt.Protocol())
 			copy(p.Options(), pkt.Options())
 			copy(p.SourceAddress(), pkt.SourceAddress())
 			copy(p.TargetAddress(), pkt.TargetAddress())
-			copy(p.Payload(), pkt.Payload()[i*maxPayloadSize:])
+			copy(p.Payload(), pkt.Payload()[i*payloadSize:])
 
-			if i == len(fragments)-1 {
+			if i == len(result)-1 {
 				p.SetFlags(0)
 			} else {
 				p.SetFlags(packet.IPv4MoreFragment)
 			}
 
 			if err := p.ResetChecksum(); err != nil {
-				for _, pkt := range fragments {
+				for _, pkt := range result {
 					if pkt != nil {
 						provider.Recycle(pkt.(packet.IPv4Packet))
 					} else {
 						break
 					}
 				}
-				return fragments[0:0]
+				return result[0:0]
 			}
 
-			fragments[i] = p
+			result[i] = p
 		}
 
 		provider.Recycle(pkt.BaseDataBlock())
 
-		return fragments
+		return result
 	}
 
 	return nil
-}
-
-func generateIdentification() uint16 {
-	var data [2]byte
-
-	n, err := CRand.Read(data[:])
-	if err != nil || n != 2 {
-		return uint16(rand.Uint32())
-	}
-
-	return binary.BigEndian.Uint16(data[:])
 }
 
 func calculateFragmentCount(length, maxSize int) int {
