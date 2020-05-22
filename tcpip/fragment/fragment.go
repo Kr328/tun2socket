@@ -47,7 +47,7 @@ func IPPacketFragment(pkt packet.IPPacket, mtu int, provider buf.BufferProvider)
 			if err := p.ResetChecksum(); err != nil {
 				for _, pkt := range result {
 					if pkt != nil {
-						provider.Recycle(pkt.(packet.IPv4Packet))
+						provider.Recycle(pkt.BaseDataBlock())
 					} else {
 						break
 					}
