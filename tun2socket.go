@@ -4,21 +4,18 @@ import (
 	"github.com/kr328/tun2socket/binding"
 	L "github.com/kr328/tun2socket/log"
 	"github.com/kr328/tun2socket/redirect"
-	"github.com/kr328/tun2socket/tcpip/buf"
-	"io"
 	"net"
 	"sync"
 )
 
-type TunDevice = io.ReadWriteCloser
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
 type ClosedHandler func()
+type TunDevice redirect.Device
 
 type Tun2Socket struct {
 	lock      sync.Mutex
 	initialed bool
 	closed    bool
-	provider  buf.BufferProvider
 
 	mtu     int
 	device  TunDevice
@@ -59,15 +56,12 @@ func (t *fakeTCPConn) RemoteAddr() net.Addr {
 
 //noinspection GoUnusedExportedFunction
 func NewTun2Socket(device TunDevice, mtu int, gateway net.IP, mirror net.IP) *Tun2Socket {
-	p := buf.NewPacketBufferProvider(mtu)
-
 	return &Tun2Socket{
-		provider:       p,
 		mtu:            mtu,
 		device:         device,
 		gateway:        gateway,
 		mirror:         mirror,
-		packetRedirect: redirect.NewRedirect(p, mtu, gateway, mirror),
+		packetRedirect: redirect.NewRedirect(device, mtu, gateway, mirror),
 		tcpRedirect:    redirect.NewTCPRedirect(gateway, mirror),
 		closedHandler: func() {
 
@@ -94,10 +88,8 @@ func (t *Tun2Socket) Start() {
 
 	t.initialed = true
 
-	t.startTCPRedirect()
-	t.startRedirect()
-	t.startReader()
-	t.startWriter()
+	t.startTCP()
+	t.startPacket()
 }
 
 func (t *Tun2Socket) Close() {
@@ -110,9 +102,8 @@ func (t *Tun2Socket) Close() {
 
 	t.closed = true
 
+	t.packetRedirect.Close()
 	t.tcpRedirect.Close()
-	_, _, _ = t.tcpRedirect.Accept() // Wait for closing
-	_ = t.device.Close()
 }
 
 func (t *Tun2Socket) SetLogger(logger L.Logger) {
@@ -159,48 +150,7 @@ func (t *Tun2Socket) resetUDPHandler() {
 	t.packetRedirect.SetUDPReceiver(a, h)
 }
 
-func (t *Tun2Socket) startReader() {
-	go func() {
-		defer t.packetRedirect.Close()
-		defer t.log.I("Tun reader exited")
-
-		for !t.closed {
-			buffer := t.provider.Obtain(t.mtu)
-
-			n, err := t.device.Read(buffer)
-			if err != nil {
-				return
-			}
-
-			buffer = buffer[:n]
-
-			t.packetRedirect.Inbound() <- buffer
-		}
-	}()
-}
-
-func (t *Tun2Socket) startWriter() {
-	go func() {
-		defer t.closedHandler()
-		defer t.log.I("Tun writer exited")
-
-		for !t.closed {
-			buffer, ok := <-t.packetRedirect.Outbound()
-			if !ok {
-				return
-			}
-
-			_, err := t.device.Write(buffer)
-			if err != nil {
-				t.log.W("Write %d bytes to tun device failure: %s", len(buffer), err.Error())
-			}
-
-			t.provider.Recycle(buffer)
-		}
-	}()
-}
-
-func (t *Tun2Socket) startTCPRedirect() {
+func (t *Tun2Socket) startTCP() {
 	go func() {
 		defer t.log.I("TCP redirect exited")
 
@@ -244,7 +194,7 @@ func (t *Tun2Socket) startTCPRedirect() {
 	}()
 }
 
-func (t *Tun2Socket) startRedirect() {
+func (t *Tun2Socket) startPacket() {
 	go func() {
 		t.packetRedirect.Exec()
 		t.Close()

@@ -5,7 +5,6 @@ A utilize that use kernel tcpip stack to forward packet from tun device.
 ### Feature
 
 - IPv4
-- IP Fragment/Reassemble
 - TCP/UDP
 - Ping Echo
 

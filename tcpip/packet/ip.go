@@ -14,6 +14,7 @@ type Protocol byte
 
 type IPPacket interface {
 	BaseDataBlock() []byte
+	ResetChecksum() error
 	SourceAddress() net.IP
 	TargetAddress() net.IP
 	Protocol() Protocol

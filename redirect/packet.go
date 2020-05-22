@@ -1,74 +1,116 @@
 package redirect
 
 import (
+	"errors"
 	"github.com/kr328/tun2socket/binding"
-	"github.com/kr328/tun2socket/coder"
-	"github.com/kr328/tun2socket/tcpip/buf"
 	"github.com/kr328/tun2socket/tcpip/packet"
+	"io"
 	"net"
 	"sync"
 )
 
-const (
-	defaultPacketCache = 64
+var (
+	ErrUnsupported = errors.New("unsupported")
+	ErrTooLarge    = errors.New("too large")
 )
 
+const (
+	maxPacketCache = 64
+)
+
+type Device io.ReadWriteCloser
+
 type Redirect struct {
-	lock   sync.Mutex
-	closed bool
+	device Device
+	mtu    int
 
 	gateway4 net.IP
 	mirror4  net.IP
 
-	inbound  chan []byte
-	outbound chan []byte
-
-	provider  buf.BufferProvider
-	encoder   *coder.PacketEncoder
-	decoder   *coder.PacketDecoder
 	tcpMapper *binding.Mapper
 
 	tcp4Port     uint16
 	udpReceiver  UDPReceiver
 	udpAllocator UDPAllocator
+
+	pool sync.Pool
 }
 
-func NewRedirect(provider buf.BufferProvider, mtu int, gateway, mirror net.IP) *Redirect {
+func NewRedirect(device Device, mtu int, gateway, mirror net.IP) *Redirect {
 	return &Redirect{
+		device:    device,
+		mtu:       mtu,
 		gateway4:  gateway,
 		mirror4:   mirror,
-		inbound:   make(chan []byte, defaultPacketCache),
-		outbound:  make(chan []byte, defaultPacketCache),
-		provider:  provider,
-		encoder:   coder.NewPacketEncoder(mtu, provider),
-		decoder:   coder.NewPacketDecoder(mtu, provider),
 		tcpMapper: binding.NewMapper(),
+		pool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, mtu)
+			},
+		},
 	}
 }
 
 func (r *Redirect) Exec() {
+	inbound := make(chan []byte, maxPacketCache)
+	outbound := make(chan []byte, maxPacketCache)
+
+	defer close(outbound)
+
+	// reader
+	go func() {
+		defer close(inbound)
+
+		for {
+			buffer := r.pool.Get().([]byte)
+
+			n, err := r.device.Read(buffer)
+			if err != nil {
+				return
+			}
+
+			inbound <- buffer[:n]
+		}
+	}()
+
+	// writer
+	go func() {
+		for {
+			buffer, ok := <-outbound
+			if !ok {
+				return
+			}
+
+			_, _ = r.device.Write(buffer)
+
+			r.pool.Put(buffer[:cap(buffer)])
+		}
+	}()
+
 	for {
-		data, ok := <-r.inbound
+		data, ok := <-inbound
 		if !ok {
 			return
 		}
 
-		ipPkt, tPkt := r.decoder.Decode(data)
+		ipPkt, tPkt := packet.Decode(data)
 		if ipPkt == nil || tPkt == nil {
+			data = data[:0]
 			continue
 		}
 
 		switch pkt := tPkt.(type) {
 		case packet.TCPPacket:
-			r.handleTCPPacket(ipPkt, pkt)
+			data = r.handleTCPPacket(ipPkt, pkt)
 		case packet.UDPPacket:
-			r.handleUDPPacket(ipPkt, pkt)
+			data = r.handleUDPPacket(ipPkt, pkt)
 		case packet.ICMPPacket:
-			r.handleICMPPacket(ipPkt, pkt)
+			data = r.handleICMPPacket(ipPkt, pkt)
 		default:
-			r.provider.Recycle(ipPkt.BaseDataBlock())
-			continue
+			data = data[:0]
 		}
+
+		outbound <- data
 	}
 }
 
@@ -83,21 +125,7 @@ func (r *Redirect) SetUDPReceiver(allocator UDPAllocator, receiver UDPReceiver) 
 }
 
 func (r *Redirect) Close() {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
-	r.closed = true
-
-	close(r.inbound)
-	close(r.outbound)
-}
-
-func (r *Redirect) Inbound() chan []byte {
-	return r.inbound
-}
-
-func (r *Redirect) Outbound() chan []byte {
-	return r.outbound
+	_ = r.device.Close()
 }
 
 func (r *Redirect) FindEndpointByPort(port uint16) *binding.Endpoint {
@@ -108,10 +136,11 @@ func (r *Redirect) FindEndpointByPort(port uint16) *binding.Endpoint {
 	return bind.Endpoint
 }
 
-func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) {
+func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacket) (pkt []byte) {
+	pkt = ipPkt.BaseDataBlock()[:0]
+
 	redirectPort := r.tcp4Port
 	if redirectPort <= 0 {
-		r.provider.Recycle(ipPkt.BaseDataBlock())
 		return
 	}
 
@@ -120,8 +149,7 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 			port := tcpPkt.TargetPort()
 			bind := r.tcpMapper.GetBindingByPort(port)
 			if bind == nil {
-				r.provider.Recycle(ipPkt.BaseDataBlock())
-				return
+				return ipPkt.BaseDataBlock()[:0]
 			}
 
 			copy(ipPkt.SourceAddress(), bind.Endpoint.Target.IP)
@@ -129,7 +157,6 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 			tcpPkt.SetSourcePort(bind.Endpoint.Target.Port)
 			tcpPkt.SetTargetPort(bind.Endpoint.Source.Port)
 		} else {
-			r.provider.Recycle(ipPkt.BaseDataBlock())
 			return
 		}
 	} else {
@@ -147,7 +174,6 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 		bind := r.tcpMapper.GetBindingByEndpoint(ep)
 		if bind == nil {
 			if tcpPkt.Flags() != packet.TCPSyn {
-				r.provider.Recycle(ipPkt.BaseDataBlock())
 				return
 			}
 
@@ -164,21 +190,16 @@ func (r *Redirect) handleTCPPacket(ipPkt packet.IPPacket, tcpPkt packet.TCPPacke
 	}
 
 	tcpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
-
-	data := r.encoder.Encode(ipPkt)
-
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	if r.closed {
+	if ipPkt.ResetChecksum() != nil {
 		return
 	}
 
-	for _, d := range data {
-		r.outbound <- d
-	}
+	return ipPkt.BaseDataBlock()
 }
 
-func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacket) {
+func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacket) (pkt []byte) {
+	pkt = ipPkt.BaseDataBlock()[:0]
+
 	alloc := r.udpAllocator
 	receive := r.udpReceiver
 
@@ -202,12 +223,13 @@ func (r *Redirect) handleUDPPacket(ipPkt packet.IPPacket, udpPkt packet.UDPPacke
 	copy(payload, udpPkt.Payload())
 	receive(payload, ep, r.SendUDP)
 
-	r.provider.Recycle(ipPkt.BaseDataBlock())
+	return
 }
 
-func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPacket) {
+func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPacket) (pkt []byte) {
+	pkt = ipPkt.BaseDataBlock()[:0]
+
 	if icmpPkt.Type() != packet.ICMPTypePingRequest || icmpPkt.Code() != 0 {
-		r.provider.Recycle(ipPkt.BaseDataBlock())
 		return
 	}
 
@@ -223,18 +245,11 @@ func (r *Redirect) handleICMPPacket(ipPkt packet.IPPacket, icmpPkt packet.ICMPPa
 	icmpPkt.SetType(0)
 
 	icmpPkt.ResetChecksum(ipPkt.SourceAddress(), ipPkt.TargetAddress())
-
-	data := r.encoder.Encode(ipPkt)
-
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	if r.closed {
+	if ipPkt.ResetChecksum() != nil {
 		return
 	}
 
-	for _, d := range data {
-		r.outbound <- d
-	}
+	return ipPkt.BaseDataBlock()
 }
 
 func (r *Redirect) SendUDP(payload []byte, endpoint *binding.Endpoint) error {
@@ -246,7 +261,16 @@ func (r *Redirect) SendUDP(payload []byte, endpoint *binding.Endpoint) error {
 	}
 
 	if len(endpoint.Source.IP) == 4 {
-		ipPkt := packet.IPv4Packet(r.provider.Obtain(packet.IPv4PacketMinLength + packet.UdpHeaderSize + len(payload)))
+		size := packet.IPv4PacketMinLength + packet.UdpHeaderSize + len(payload)
+
+		if size > r.mtu {
+			return ErrTooLarge
+		}
+
+		data := r.pool.Get().([]byte)[:size]
+		defer r.pool.Put(data[:cap(data)])
+
+		ipPkt := packet.IPv4Packet(data)
 
 		packet.SetPacketVersion(ipPkt, packet.IPv4)
 		ipPkt.SetHeaderLength(packet.IPv4PacketMinLength)
@@ -270,18 +294,9 @@ func (r *Redirect) SendUDP(payload []byte, endpoint *binding.Endpoint) error {
 			return nil
 		}
 
-		data := r.encoder.Encode(ipPkt)
-
-		r.lock.Lock()
-		defer r.lock.Unlock()
-		if r.closed {
-			return nil
-		}
-
-		for _, d := range data {
-			r.outbound <- d
-		}
+		_, err := r.device.Write(data)
+		return err
 	}
 
-	return nil
+	return ErrUnsupported
 }
