@@ -69,7 +69,12 @@ func (r *Redirect) Exec() {
 				return
 			}
 
-			inbound <- buffer[:n]
+			select {
+			case inbound <- buffer[:n]:
+				break
+			default:
+				r.pool.Put(buffer[:cap(buffer)])
+			}
 		}
 	}()
 
@@ -110,7 +115,12 @@ func (r *Redirect) Exec() {
 			data = data[:0]
 		}
 
-		outbound <- data
+		select {
+		case outbound <- data:
+			break
+		default:
+			r.pool.Put(data[:cap(data)])
+		}
 	}
 }
 
