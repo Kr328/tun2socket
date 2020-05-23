@@ -2,7 +2,6 @@ package binding
 
 import (
 	"container/list"
-	"sync"
 )
 
 const (
@@ -10,7 +9,6 @@ const (
 )
 
 type Mapper struct {
-	lock      sync.Mutex
 	pool      *PortPool
 	bindings  *list.List
 	endpoints map[endpointKey]*list.Element
@@ -27,9 +25,6 @@ func NewMapper() *Mapper {
 }
 
 func (mapper *Mapper) PutBinding(binding *Binding) *Binding {
-	mapper.lock.Lock()
-	defer mapper.lock.Unlock()
-
 	if mapper.bindings.Len() >= defaultRecordMaxSize {
 		element := mapper.bindings.Back()
 		binding := element.Value.(*Binding)
@@ -47,9 +42,6 @@ func (mapper *Mapper) PutBinding(binding *Binding) *Binding {
 }
 
 func (mapper *Mapper) GetBindingByEndpoint(endpoint *Endpoint) *Binding {
-	mapper.lock.Lock()
-	defer mapper.lock.Unlock()
-
 	elm, ok := mapper.endpoints[endpoint.asKey()]
 	if !ok {
 		return nil
@@ -60,9 +52,6 @@ func (mapper *Mapper) GetBindingByEndpoint(endpoint *Endpoint) *Binding {
 }
 
 func (mapper *Mapper) GetBindingByPort(port uint16) *Binding {
-	mapper.lock.Lock()
-	defer mapper.lock.Unlock()
-
 	elm, ok := mapper.ports[port]
 	if !ok {
 		return nil
@@ -73,9 +62,6 @@ func (mapper *Mapper) GetBindingByPort(port uint16) *Binding {
 }
 
 func (mapper *Mapper) FindFreePort() uint16 {
-	mapper.lock.Lock()
-	defer mapper.lock.Unlock()
-
 	for {
 		p := mapper.pool.Next()
 		if _, ok := mapper.ports[p]; !ok {
@@ -85,9 +71,6 @@ func (mapper *Mapper) FindFreePort() uint16 {
 }
 
 func (mapper *Mapper) Reset() {
-	mapper.lock.Lock()
-	defer mapper.lock.Unlock()
-
 	mapper.bindings.Init()
 	mapper.ports = map[uint16]*list.Element{}
 	mapper.endpoints = map[endpointKey]*list.Element{}
