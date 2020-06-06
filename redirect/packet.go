@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 var (
@@ -15,7 +16,8 @@ var (
 )
 
 const (
-	maxPacketCache = 64
+	maxPacketCache    = 1024
+	dropPacketTimeout = time.Millisecond * 20
 )
 
 type Device io.ReadWriteCloser
@@ -55,7 +57,12 @@ func (r *Redirect) Exec() {
 	inbound := make(chan []byte, maxPacketCache)
 	outbound := make(chan []byte, maxPacketCache)
 
+	inboundTimer := time.NewTimer(0)
+	outboundTimer := time.NewTimer(0)
+
 	defer close(outbound)
+	defer inboundTimer.Stop()
+	defer outboundTimer.Stop()
 
 	// reader
 	go func() {
@@ -69,10 +76,12 @@ func (r *Redirect) Exec() {
 				return
 			}
 
+			inboundTimer.Reset(dropPacketTimeout)
+
 			select {
 			case inbound <- buffer[:n]:
 				break
-			default:
+			case <-inboundTimer.C:
 				r.pool.Put(buffer[:cap(buffer)])
 			}
 		}
@@ -115,10 +124,12 @@ func (r *Redirect) Exec() {
 			data = data[:0]
 		}
 
+		outboundTimer.Reset(dropPacketTimeout)
+
 		select {
 		case outbound <- data:
 			break
-		default:
+		case <-outboundTimer.C:
 			r.pool.Put(data[:cap(data)])
 		}
 	}
