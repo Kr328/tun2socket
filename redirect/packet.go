@@ -76,6 +76,9 @@ func (r *Redirect) Exec() {
 				return
 			}
 
+			if !inboundTimer.Stop() {
+				<-inboundTimer.C
+			}
 			inboundTimer.Reset(dropPacketTimeout)
 
 			select {
@@ -124,6 +127,9 @@ func (r *Redirect) Exec() {
 			data = data[:0]
 		}
 
+		if !outboundTimer.Stop() {
+			<-outboundTimer.C
+		}
 		outboundTimer.Reset(dropPacketTimeout)
 
 		select {
