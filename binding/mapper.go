@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	defaultRecordMaxSize = 4096
+	DefaultRecordMaxSize = 4096
 )
 
 type Mapper struct {
@@ -21,8 +21,8 @@ func NewMapper() *Mapper {
 	return &Mapper{
 		pool:      NewPortPool(),
 		bindings:  list.New(),
-		endpoints: make(map[endpointKey]*list.Element, defaultRecordMaxSize*2),
-		ports:     make(map[uint16]*list.Element, defaultRecordMaxSize*2),
+		endpoints: make(map[endpointKey]*list.Element, DefaultRecordMaxSize*2),
+		ports:     make(map[uint16]*list.Element, DefaultRecordMaxSize*2),
 	}
 }
 
@@ -30,7 +30,7 @@ func (mapper *Mapper) PutBinding(binding *Binding) *Binding {
 	mapper.lock.Lock()
 	defer mapper.lock.Unlock()
 
-	if mapper.bindings.Len() >= defaultRecordMaxSize {
+	if mapper.bindings.Len() >= DefaultRecordMaxSize {
 		element := mapper.bindings.Back()
 		binding := element.Value.(*Binding)
 		delete(mapper.endpoints, binding.Endpoint.asKey())
