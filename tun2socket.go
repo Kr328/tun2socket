@@ -1,11 +1,14 @@
 package tun2socket
 
 import (
+	"errors"
 	"github.com/kr328/tun2socket/binding"
 	L "github.com/kr328/tun2socket/log"
 	"github.com/kr328/tun2socket/redirect"
 	"net"
 	"sync"
+	"syscall"
+	"time"
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
@@ -169,7 +172,19 @@ func (t *Tun2Socket) startTCP() {
 			for !t.closed {
 				conn, addr, err := t.tcpRedirect.Accept()
 				if err != nil {
-					break
+					e := unwrapErrno(err)
+					if e == 0 {
+						break
+					}
+
+					if e != syscall.EMFILE && e != syscall.ENFILE {
+						break
+					}
+
+					t.log.W("Wait file descriptor available for 1s")
+					time.Sleep(time.Second * 1)
+
+					continue
 				}
 
 				if !addr.IP.Equal(t.mirror) {
@@ -200,4 +215,15 @@ func (t *Tun2Socket) startPacket() {
 		t.Close()
 		t.log.I("Packet redirect exited")
 	}()
+}
+
+func unwrapErrno(err error) syscall.Errno {
+	for !errors.Is(err, syscall.EACCES) {
+		err = errors.Unwrap(err)
+		if err == nil {
+			return 0
+		}
+	}
+
+	return err.(syscall.Errno)
 }

@@ -32,11 +32,14 @@ func (t *TCPRedirect) Listen() (int, error) {
 		Port: 0,
 		Zone: "",
 	}
+
 	tcp, err := net.ListenTCP("tcp4", tcpAddr)
 	if err != nil {
 		return 0, err
 	}
+
 	tcpAddr = tcp.Addr().(*net.TCPAddr)
+
 	t.listener = tcp
 
 	return tcpAddr.Port, nil
