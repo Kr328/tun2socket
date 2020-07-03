@@ -174,6 +174,10 @@ func (t *Tun2Socket) startTCP() {
 				if err != nil {
 					t.log.W("TCP Redirect receive error: %s", err.Error())
 
+					if err == redirect.ErrInvalidSource {
+						continue
+					}
+
 					e := unwrapErrno(err)
 					if e == 0 {
 						break
