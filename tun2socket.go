@@ -192,7 +192,6 @@ func (t *Tun2Socket) startTCP() {
 					case syscall.EINTR:
 					case syscall.ECONNABORTED:
 						continue
-					case syscall.EAGAIN:
 					case syscall.EWOULDBLOCK:
 						t.log.W("wtf")
 					}
