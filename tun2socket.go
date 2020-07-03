@@ -172,19 +172,28 @@ func (t *Tun2Socket) startTCP() {
 			for !t.closed {
 				conn, addr, err := t.tcpRedirect.Accept()
 				if err != nil {
+					t.log.W("TCP Redirect receive error: %s", err.Error())
+
 					e := unwrapErrno(err)
 					if e == 0 {
 						break
 					}
 
-					if e != syscall.EMFILE && e != syscall.ENFILE {
-						break
+					switch e {
+					case syscall.ENFILE:
+					case syscall.EMFILE:
+						t.log.W("Wait file descriptor available for 1s")
+						time.Sleep(time.Second * 1)
+						continue
+					case syscall.EINTR:
+					case syscall.ECONNABORTED:
+						continue
+					case syscall.EAGAIN:
+					case syscall.EWOULDBLOCK:
+						t.log.W("wtf")
 					}
 
-					t.log.W("Wait file descriptor available for 1s")
-					time.Sleep(time.Second * 1)
-
-					continue
+					break
 				}
 
 				if !addr.IP.Equal(t.mirror) {
