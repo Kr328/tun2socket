@@ -3,6 +3,7 @@ package redirect
 import (
 	"errors"
 	"net"
+	"time"
 )
 
 var (
@@ -65,4 +66,8 @@ func (t *TCPRedirect) Close() {
 	if l := t.listener; l != nil {
 		_ = l.Close()
 	}
+}
+
+func (t *TCPRedirect) IsAlive() bool {
+	return t.listener.SetDeadline(time.Time{}) == nil
 }

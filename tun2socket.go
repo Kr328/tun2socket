@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 	"syscall"
-	"time"
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
@@ -156,67 +155,43 @@ func (t *Tun2Socket) resetUDPHandler() {
 func (t *Tun2Socket) startTCP() {
 	go func() {
 		defer t.log.I("TCP redirect exited")
+		defer t.tcpRedirect.Close()
 
-		for !t.closed {
-			port, err := t.tcpRedirect.Listen()
+		port, err := t.tcpRedirect.Listen()
+		if err != nil {
+			t.log.E("Listen TCP redirect failure", err.Error())
+			t.Close()
+			return
+		}
+
+		t.packetRedirect.ResetTCP(uint16(port))
+
+		t.log.I("Listen TCP redirect %d", port)
+
+		for !t.closed && t.tcpRedirect.IsAlive() {
+			conn, addr, err := t.tcpRedirect.Accept()
 			if err != nil {
-				t.log.E("Listen TCP redirect failure", err.Error())
-				t.Close()
-				return
+				t.log.W("TCP Redirect receive error: %s", err.Error())
+				continue
 			}
 
-			t.packetRedirect.ResetTCP(uint16(port))
-
-			t.log.I("Listen TCP redirect %d", port)
-
-			for !t.closed {
-				conn, addr, err := t.tcpRedirect.Accept()
-				if err != nil {
-					t.log.W("TCP Redirect receive error: %s", err.Error())
-
-					if err == redirect.ErrInvalidSource {
-						continue
-					}
-
-					e := unwrapErrno(err)
-					if e == 0 {
-						break
-					}
-
-					switch e {
-					case syscall.ENFILE:
-					case syscall.EMFILE:
-						t.log.W("Wait file descriptor available for 1s")
-						time.Sleep(time.Second * 1)
-						continue
-					case syscall.EINTR:
-					case syscall.ECONNABORTED:
-						continue
-					case syscall.EWOULDBLOCK:
-						t.log.W("wtf")
-					}
-
-					break
-				}
-
-				if !addr.IP.Equal(t.mirror) {
-					_ = conn.Close()
-					continue
-				}
-
-				ep := t.packetRedirect.FindEndpointByPort(uint16(addr.Port))
-				if ep == nil {
-					_ = conn.Close()
-					continue
-				}
-
-				fakeConn := &fakeTCPConn{
-					TCPConn:  conn,
-					endpoint: ep,
-				}
-
-				t.tcpHandler(fakeConn, ep)
+			if !addr.IP.Equal(t.mirror) {
+				_ = conn.Close()
+				continue
 			}
+
+			ep := t.packetRedirect.FindEndpointByPort(uint16(addr.Port))
+			if ep == nil {
+				_ = conn.Close()
+				continue
+			}
+
+			fakeConn := &fakeTCPConn{
+				TCPConn:  conn,
+				endpoint: ep,
+			}
+
+			t.tcpHandler(fakeConn, ep)
 		}
 	}()
 }
