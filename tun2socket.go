@@ -1,13 +1,11 @@
 package tun2socket
 
 import (
-	"errors"
 	"github.com/kr328/tun2socket/binding"
 	L "github.com/kr328/tun2socket/log"
 	"github.com/kr328/tun2socket/redirect"
 	"net"
 	"sync"
-	"syscall"
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
@@ -33,27 +31,6 @@ type Tun2Socket struct {
 	allocator     redirect.UDPAllocator
 
 	log L.Logger
-}
-
-type fakeTCPConn struct {
-	*net.TCPConn
-	endpoint *binding.Endpoint
-}
-
-func (t *fakeTCPConn) LocalAddr() net.Addr {
-	return &net.TCPAddr{
-		IP:   t.endpoint.Target.IP,
-		Port: int(t.endpoint.Target.Port),
-		Zone: "",
-	}
-}
-
-func (t *fakeTCPConn) RemoteAddr() net.Addr {
-	return &net.TCPAddr{
-		IP:   t.endpoint.Source.IP,
-		Port: int(t.endpoint.Source.Port),
-		Zone: "",
-	}
 }
 
 //noinspection GoUnusedExportedFunction
@@ -186,12 +163,7 @@ func (t *Tun2Socket) startTCP() {
 				continue
 			}
 
-			fakeConn := &fakeTCPConn{
-				TCPConn:  conn,
-				endpoint: ep,
-			}
-
-			t.tcpHandler(fakeConn, ep)
+			t.tcpHandler(conn, ep)
 		}
 	}()
 }
@@ -202,15 +174,4 @@ func (t *Tun2Socket) startPacket() {
 		t.Close()
 		t.log.I("Packet redirect exited")
 	}()
-}
-
-func unwrapErrno(err error) syscall.Errno {
-	for !errors.Is(err, syscall.EACCES) {
-		err = errors.Unwrap(err)
-		if err == nil {
-			return 0
-		}
-	}
-
-	return err.(syscall.Errno)
 }
