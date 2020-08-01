@@ -1,13 +1,11 @@
 package tun2socket
 
 import (
-	"errors"
 	"github.com/kr328/tun2socket/binding"
 	L "github.com/kr328/tun2socket/log"
 	"github.com/kr328/tun2socket/redirect"
 	"net"
 	"sync"
-	"syscall"
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
@@ -202,15 +200,4 @@ func (t *Tun2Socket) startPacket() {
 		t.Close()
 		t.log.I("Packet redirect exited")
 	}()
-}
-
-func unwrapErrno(err error) syscall.Errno {
-	for !errors.Is(err, syscall.EACCES) {
-		err = errors.Unwrap(err)
-		if err == nil {
-			return 0
-		}
-	}
-
-	return err.(syscall.Errno)
 }
