@@ -40,16 +40,16 @@ type fakeTCPConn struct {
 
 func (t *fakeTCPConn) LocalAddr() net.Addr {
 	return &net.TCPAddr{
-		IP:   t.endpoint.Target.IP,
-		Port: int(t.endpoint.Target.Port),
+		IP:   t.endpoint.Source.IP,
+		Port: int(t.endpoint.Source.Port),
 		Zone: "",
 	}
 }
 
 func (t *fakeTCPConn) RemoteAddr() net.Addr {
 	return &net.TCPAddr{
-		IP:   t.endpoint.Source.IP,
-		Port: int(t.endpoint.Source.Port),
+		IP:   t.endpoint.Target.IP,
+		Port: int(t.endpoint.Target.Port),
 		Zone: "",
 	}
 }
