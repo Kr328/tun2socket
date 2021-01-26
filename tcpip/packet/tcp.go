@@ -2,8 +2,9 @@ package packet
 
 import (
 	"encoding/binary"
-	"github.com/kr328/tun2socket/tcpip/sum"
 	"net"
+
+	"github.com/kr328/tun2socket/tcpip/sum"
 )
 
 const (

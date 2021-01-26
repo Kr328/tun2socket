@@ -2,11 +2,12 @@ package redirect
 
 import (
 	"errors"
-	"github.com/kr328/tun2socket/binding"
-	"github.com/kr328/tun2socket/tcpip/packet"
 	"io"
 	"net"
 	"sync"
+
+	"github.com/kr328/tun2socket/binding"
+	"github.com/kr328/tun2socket/tcpip/packet"
 )
 
 var (

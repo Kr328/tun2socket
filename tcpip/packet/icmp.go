@@ -1,8 +1,9 @@
 package packet
 
 import (
-	"github.com/kr328/tun2socket/tcpip/sum"
 	"net"
+
+	"github.com/kr328/tun2socket/tcpip/sum"
 )
 
 const (

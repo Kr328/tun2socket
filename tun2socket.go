@@ -1,11 +1,12 @@
 package tun2socket
 
 import (
+	"net"
+	"sync"
+
 	"github.com/kr328/tun2socket/binding"
 	L "github.com/kr328/tun2socket/log"
 	"github.com/kr328/tun2socket/redirect"
-	"net"
-	"sync"
 )
 
 type TCPHandler func(conn net.Conn, endpoint *binding.Endpoint)
@@ -184,12 +185,7 @@ func (t *Tun2Socket) startTCP() {
 				continue
 			}
 
-			fakeConn := &fakeTCPConn{
-				TCPConn:  conn,
-				endpoint: ep,
-			}
-
-			t.tcpHandler(fakeConn, ep)
+			t.tcpHandler(conn, ep)
 		}
 	}()
 }
