@@ -16,7 +16,7 @@ var (
 )
 
 const (
-	maxPacketCache = 100
+	maxPacketCache = 256
 )
 
 type Device io.ReadWriteCloser
