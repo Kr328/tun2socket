@@ -9,7 +9,8 @@ import (
 type TCP struct {
 	net.Listener
 
-	table *table
+	portal net.IP
+	table  *table
 }
 
 type conn struct {
@@ -26,7 +27,7 @@ func (t *TCP) Accept() (net.Conn, error) {
 
 	addr := c.RemoteAddr().(*net.TCPAddr)
 	tup := t.table.tupleOf(uint16(addr.Port))
-	if tup == zeroTuple {
+	if !addr.IP.Equal(t.portal) || tup == zeroTuple {
 		_ = c.Close()
 
 		return nil, net.InvalidAddrError("unknown remote addr")

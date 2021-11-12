@@ -32,6 +32,7 @@ func Start(
 	}
 	tcp := &TCP{
 		Listener: listener,
+		portal:   portal,
 		table:    tab,
 	}
 
