@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 	"syscall"
+	"time"
 )
 
 type TCP struct {
@@ -33,7 +34,12 @@ func (t *TCP) Accept() (net.Conn, error) {
 		return nil, net.InvalidAddrError("unknown remote addr")
 	}
 
-	sys, err := c.(*net.TCPConn).SyscallConn()
+	tc := c.(*net.TCPConn)
+
+	_ = tc.SetKeepAlive(true)
+	_ = tc.SetKeepAlivePeriod(time.Minute)
+
+	sys, err := tc.SyscallConn()
 	if err == nil {
 		_ = sys.Control(func(fd uintptr) {
 			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_NO_CHECK, 1)
