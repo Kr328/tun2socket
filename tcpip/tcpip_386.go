@@ -1,0 +1,23 @@
+//go:build !noasm
+// +build !noasm
+
+package tcpip
+
+import (
+	"unsafe"
+
+	"golang.org/x/sys/cpu"
+)
+
+//go:noescape
+func sumAsmAvx2(data unsafe.Pointer, length uintptr) uintptr
+
+func sumAVX2(data []byte) uint32 {
+	return uint32(sumAsmAvx2(unsafe.Pointer(&data[0]), uintptr(len(data))))
+}
+
+func init() {
+	if cpu.X86.HasAVX2 {
+		sum = sumAVX2
+	}
+}
