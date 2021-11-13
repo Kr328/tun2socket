@@ -10,7 +10,7 @@ import (
 
 func Test_SumNeon(t *testing.T) {
 	if !cpu.ARM64.HasASIMD {
-		t.Skipf("AVX2 unavailable")
+		t.Skipf("Neon unavailable")
 
 		return
 	}
@@ -26,10 +26,38 @@ func Test_SumNeon(t *testing.T) {
 		}
 
 		compat := sumCompat(bytes)
-		avx := sumNeon(bytes)
+		neon := sumNeon(bytes)
 
-		if compat != avx {
-			t.Errorf("Sum of %s mismatched: %d != %d", hex.EncodeToString(bytes), compat, avx)
+		if compat != neon {
+			t.Errorf("Sum of %s mismatched: %d != %d", hex.EncodeToString(bytes), compat, neon)
+
+			return
+		}
+	}
+}
+
+func Test_SumNeon1393(t *testing.T) {
+	if !cpu.ARM64.HasASIMD {
+		t.Skipf("Neon unavailable")
+
+		return
+	}
+
+	bytes := make([]byte, 1393)
+
+	for i := 0; i < 10000; i++ {
+		_, err := rand.Reader.Read(bytes)
+		if err != nil {
+			t.Skipf("Rand read failed: %v", err)
+
+			return
+		}
+
+		compat := sumCompat(bytes)
+		neon := sumNeon(bytes)
+
+		if compat != neon {
+			t.Errorf("Sum of %s mismatched: %d != %d", hex.EncodeToString(bytes), compat, neon)
 
 			return
 		}
@@ -38,7 +66,7 @@ func Test_SumNeon(t *testing.T) {
 
 func Benchmark_SumNeon(b *testing.B) {
 	if !cpu.ARM64.HasASIMD {
-		b.Skipf("AVX2 unavailable")
+		b.Skipf("Neon unavailable")
 
 		return
 	}
