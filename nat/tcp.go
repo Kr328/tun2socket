@@ -8,10 +8,9 @@ import (
 )
 
 type TCP struct {
-	net.Listener
-
-	portal net.IP
-	table  *table
+	listener *net.TCPListener
+	portal   net.IP
+	table    *table
 }
 
 type conn struct {
@@ -21,7 +20,7 @@ type conn struct {
 }
 
 func (t *TCP) Accept() (net.Conn, error) {
-	c, err := t.Listener.Accept()
+	c, err := t.listener.AcceptTCP()
 	if err != nil {
 		return nil, err
 	}
@@ -34,12 +33,10 @@ func (t *TCP) Accept() (net.Conn, error) {
 		return nil, net.InvalidAddrError("unknown remote addr")
 	}
 
-	tc := c.(*net.TCPConn)
+	_ = c.SetKeepAlive(true)
+	_ = c.SetKeepAlivePeriod(time.Minute)
 
-	_ = tc.SetKeepAlive(true)
-	_ = tc.SetKeepAlivePeriod(time.Minute)
-
-	sys, err := tc.SyscallConn()
+	sys, err := c.SyscallConn()
 	if err == nil {
 		_ = sys.Control(func(fd uintptr) {
 			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_NO_CHECK, 1)
@@ -50,6 +47,18 @@ func (t *TCP) Accept() (net.Conn, error) {
 		Conn:  c,
 		tuple: tup,
 	}, nil
+}
+
+func (t *TCP) Close() error {
+	return t.listener.Close()
+}
+
+func (t *TCP) Addr() net.Addr {
+	return t.listener.Addr()
+}
+
+func (t *TCP) SetDeadline(time time.Time) error {
+	return t.listener.SetDeadline(time)
 }
 
 func (c *conn) LocalAddr() net.Addr {

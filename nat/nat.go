@@ -31,7 +31,7 @@ func Start(
 		buf:    [65535]byte{},
 	}
 	tcp := &TCP{
-		Listener: listener,
+		listener: listener,
 		portal:   portal,
 		table:    tab,
 	}
