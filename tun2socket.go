@@ -21,8 +21,9 @@ func StartTun2Socket(device io.ReadWriteCloser, gateway net.IP, portal net.IP) (
 	}
 
 	return &Tun2Socket{
-		tcp: tcp,
-		udp: udp,
+		device: device,
+		tcp:    tcp,
+		udp:    udp,
 	}, nil
 }
 
