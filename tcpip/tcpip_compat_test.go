@@ -5,7 +5,10 @@ import (
 	"testing"
 )
 
-const chunkSize = 9631
+const (
+	chunkSize  = 9000
+	chunkCount = 10
+)
 
 func Benchmark_SumCompat(b *testing.B) {
 	bytes := make([]byte, chunkSize)
@@ -13,8 +16,6 @@ func Benchmark_SumCompat(b *testing.B) {
 	_, err := rand.Reader.Read(bytes)
 	if err != nil {
 		b.Skipf("Rand read failed: %v", err)
-
-		return
 	}
 
 	b.ResetTimer()

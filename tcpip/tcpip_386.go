@@ -13,6 +13,10 @@ import (
 func sumAsmAvx2(data unsafe.Pointer, length uintptr) uintptr
 
 func sumAVX2(data []byte) uint32 {
+	if len(data) == 0 {
+		return 0
+	}
+
 	return uint32(sumAsmAvx2(unsafe.Pointer(&data[0]), uintptr(len(data))))
 }
 

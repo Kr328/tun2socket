@@ -2,7 +2,6 @@ package tcpip
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"testing"
 
 	"golang.org/x/sys/cpu"
@@ -11,55 +10,23 @@ import (
 func Test_SumAVX2(t *testing.T) {
 	if !cpu.X86.HasAVX2 {
 		t.Skipf("AVX2 unavailable")
-
-		return
 	}
 
 	bytes := make([]byte, chunkSize)
 
-	for i := 0; i < 10000; i++ {
-		_, err := rand.Reader.Read(bytes)
-		if err != nil {
-			t.Skipf("Rand read failed: %v", err)
+	for size := 0; size <= chunkSize; size++ {
+		for count := 0; count < chunkCount; count++ {
+			_, err := rand.Reader.Read(bytes[:size])
+			if err != nil {
+				t.Skipf("Rand read failed: %v", err)
+			}
 
-			return
-		}
+			compat := sumCompat(bytes[:size])
+			avx := sumAVX2(bytes[:size])
 
-		compat := sumCompat(bytes)
-		avx := sumAVX2(bytes)
-
-		if compat != avx {
-			t.Errorf("Sum of %s mismatched: %d != %d", hex.EncodeToString(bytes), compat, avx)
-
-			return
-		}
-	}
-}
-
-func Test_SumAVX21393(t *testing.T) {
-	if !cpu.X86.HasAVX2 {
-		t.Skipf("AVX2 unavailable")
-
-		return
-	}
-
-	bytes := make([]byte, 1393)
-
-	for i := 0; i < 10000; i++ {
-		_, err := rand.Reader.Read(bytes)
-		if err != nil {
-			t.Skipf("Rand read failed: %v", err)
-
-			return
-		}
-
-		compat := sumCompat(bytes)
-		avx := sumAVX2(bytes)
-
-		if compat != avx {
-			t.Errorf("Sum of %s mismatched: %d != %d", hex.EncodeToString(bytes), compat, avx)
-
-			return
+			if compat != avx {
+				t.Errorf("Sum of length=%d mismatched", size)
+			}
 		}
 	}
 }
@@ -67,8 +34,6 @@ func Test_SumAVX21393(t *testing.T) {
 func Benchmark_SumAVX2(b *testing.B) {
 	if !cpu.X86.HasAVX2 {
 		b.Skipf("AVX2 unavailable")
-
-		return
 	}
 
 	bytes := make([]byte, chunkSize)
@@ -76,8 +41,6 @@ func Benchmark_SumAVX2(b *testing.B) {
 	_, err := rand.Reader.Read(bytes)
 	if err != nil {
 		b.Skipf("Rand read failed: %v", err)
-
-		return
 	}
 
 	b.ResetTimer()
