@@ -33,8 +33,7 @@ func (t *TCP) Accept() (net.Conn, error) {
 		return nil, net.InvalidAddrError("unknown remote addr")
 	}
 
-	_ = c.SetKeepAlive(true)
-	_ = c.SetKeepAlivePeriod(time.Minute)
+	_ = c.SetKeepAlive(false)
 
 	sys, err := c.SyscallConn()
 	if err == nil {
