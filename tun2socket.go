@@ -4,7 +4,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/kr328/tun2socket/nat"
+	"github.com/Kr328/tun2socket/nat"
 )
 
 type Tun2Socket struct {

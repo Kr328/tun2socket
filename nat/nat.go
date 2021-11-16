@@ -5,7 +5,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/kr328/tun2socket/tcpip"
+	"github.com/Kr328/tun2socket/tcpip"
 )
 
 func Start(

@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/kr328/tun2socket/tcpip"
+	"github.com/Kr328/tun2socket/tcpip"
 )
 
 type call struct {
