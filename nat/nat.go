@@ -140,13 +140,15 @@ func Start(
 
 				i.SetType(tcpip.ICMPTypePingResponse)
 
-				source := binary.LittleEndian.Uint32(ip.SourceIP())
-				destination := binary.LittleEndian.Uint32(ip.DestinationIP())
-				binary.LittleEndian.PutUint32(ip.SourceIP(), destination)
-				binary.LittleEndian.PutUint32(ip.DestinationIP(), source)
+				source := ip.SourceIP()
+				destination := ip.DestinationIP()
+				ip.SetSourceIP(destination)
+				ip.SetDestinationIP(source)
 
 				ip.ResetChecksum()
 				i.ResetChecksum()
+
+				device.Write(raw)
 			}
 		}
 	}()
