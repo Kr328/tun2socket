@@ -26,7 +26,6 @@ func Start(
 
 	tab := newTable()
 	udp := &UDP{
-		calls:  map[*call]struct{}{},
 		device: device,
 		buf:    [65535]byte{},
 	}
