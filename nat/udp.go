@@ -18,28 +18,28 @@ type call struct {
 }
 
 type UDP struct {
-	closed  bool
-	lock    sync.Mutex
-	calls   map[*call]struct{}
-	device  io.Writer
-	bufLock sync.Mutex
-	buf     [65535]byte
+	closed    bool
+	device    io.Writer
+	queueLock sync.Mutex
+	queue     []*call
+	bufLock   sync.Mutex
+	buf       [65535]byte
 }
 
 func (u *UDP) ReadFrom(buf []byte) (int, net.Addr, net.Addr, error) {
-	u.lock.Lock()
-	defer u.lock.Unlock()
+	u.queueLock.Lock()
+	defer u.queueLock.Unlock()
 
 	for !u.closed {
 		c := &call{
-			cond:        sync.NewCond(&u.lock),
+			cond:        sync.NewCond(&u.queueLock),
 			buf:         buf,
 			n:           -1,
 			source:      nil,
 			destination: nil,
 		}
 
-		u.calls[c] = struct{}{}
+		u.queue = append(u.queue, c)
 
 		c.cond.Wait()
 
@@ -52,6 +52,10 @@ func (u *UDP) ReadFrom(buf []byte) (int, net.Addr, net.Addr, error) {
 }
 
 func (u *UDP) WriteTo(buf []byte, local net.Addr, remote net.Addr) (int, error) {
+	if u.closed {
+		return 0, net.ErrClosed
+	}
+
 	u.bufLock.Lock()
 	defer u.bufLock.Unlock()
 
@@ -71,8 +75,9 @@ func (u *UDP) WriteTo(buf []byte, local net.Addr, remote net.Addr) (int, error) 
 		return 0, net.InvalidAddrError("invalid ip version")
 	}
 
+	tcpip.SetIPv4(u.buf[:])
+
 	ip := tcpip.IPv4Packet(u.buf[:])
-	tcpip.SetIPv4(ip)
 	ip.SetHeaderLen(tcpip.IPv4HeaderSize)
 	ip.SetTotalLength(tcpip.IPv4HeaderSize + tcpip.UDPHeaderSize + uint16(len(buf)))
 	ip.SetTypeOfService(0)
@@ -96,12 +101,12 @@ func (u *UDP) WriteTo(buf []byte, local net.Addr, remote net.Addr) (int, error) 
 }
 
 func (u *UDP) Close() error {
-	u.lock.Lock()
-	defer u.lock.Unlock()
+	u.queueLock.Lock()
+	defer u.queueLock.Unlock()
 
 	u.closed = true
 
-	for c := range u.calls {
+	for _, c := range u.queue {
 		c.cond.Signal()
 	}
 
@@ -111,14 +116,15 @@ func (u *UDP) Close() error {
 func (u *UDP) handleUDPPacket(ip tcpip.IPv4Packet, pkt tcpip.UDPPacket) {
 	var c *call
 
-	u.lock.Lock()
+	u.queueLock.Lock()
 
-	for c = range u.calls {
-		delete(u.calls, c)
-		break
+	if len(u.queue) > 0 {
+		idx := len(u.queue) - 1
+		c = u.queue[idx]
+		u.queue = u.queue[:idx]
 	}
 
-	u.lock.Unlock()
+	u.queueLock.Unlock()
 
 	if c != nil {
 		c.source = &net.UDPAddr{
