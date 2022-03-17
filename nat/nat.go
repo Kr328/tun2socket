@@ -38,8 +38,10 @@ func Start(
 	gatewayPort := uint16(listener.Addr().(*net.TCPAddr).Port)
 
 	go func() {
-		defer tcp.Close()
-		defer udp.Close()
+		defer func() {
+			_ = tcp.Close()
+			_ = udp.Close()
+		}()
 
 		buf := make([]byte, 65535)
 
@@ -147,7 +149,7 @@ func Start(
 				ip.ResetChecksum()
 				i.ResetChecksum()
 
-				device.Write(raw)
+				_, _ = device.Write(raw)
 			}
 		}
 	}()
