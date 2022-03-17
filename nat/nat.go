@@ -10,11 +10,11 @@ import (
 
 func Start(
 	device io.ReadWriter,
-	gateway net.IP,
+	network *net.IPNet,
 	portal net.IP,
 ) (*TCP, *UDP, error) {
 	portal = portal.To4()
-	gateway = gateway.To4()
+	gateway := network.IP.To4()
 	if portal == nil || gateway == nil {
 		return nil, nil, net.InvalidAddrError("only ipv4 supported")
 	}
@@ -34,6 +34,9 @@ func Start(
 		portal:   portal,
 		table:    tab,
 	}
+
+	broadcast := net.IP{0, 0, 0, 0}
+	binary.BigEndian.PutUint32(broadcast, binary.BigEndian.Uint32(gateway.To4())|^binary.BigEndian.Uint32(net.IP(network.Mask).To4()))
 
 	gatewayPort := uint16(listener.Addr().(*net.TCPAddr).Port)
 
@@ -67,6 +70,10 @@ func Start(
 			}
 
 			if ip.Offset() != 0 {
+				continue
+			}
+
+			if !ip.DestinationIP().IsGlobalUnicast() || ip.DestinationIP().Equal(broadcast) {
 				continue
 			}
 
