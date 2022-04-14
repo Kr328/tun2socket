@@ -91,12 +91,6 @@ func (p IPv4Packet) SetFlags(flags byte) {
 	p[6] |= flags << 5
 }
 
-func (p IPv4Packet) Offset() uint16 {
-	offset := binary.BigEndian.Uint16(p[6:8])
-
-	return (offset & 0x1fff) * 8
-}
-
 func (p IPv4Packet) SourceIP() net.IP {
 	return net.IP{p[12], p[13], p[14], p[15]}
 }
