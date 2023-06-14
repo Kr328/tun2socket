@@ -2,6 +2,7 @@ package nat
 
 import (
 	"container/list"
+	"net/netip"
 )
 
 const (
@@ -12,10 +13,8 @@ const (
 var zeroTuple = tuple{}
 
 type tuple struct {
-	SourceIP        uint32
-	DestinationIP   uint32
-	SourcePort      uint16
-	DestinationPort uint16
+	from netip.AddrPort
+	to   netip.AddrPort
 }
 
 type binding struct {
@@ -29,7 +28,7 @@ type table struct {
 	available *list.List
 }
 
-func (t *table) tupleOf(port uint16) tuple {
+func (t *table) findTupleByPort(port uint16) tuple {
 	offset := port - portBegin
 	if offset > portLength {
 		return zeroTuple
@@ -42,7 +41,7 @@ func (t *table) tupleOf(port uint16) tuple {
 	return elm.Value.(*binding).tuple
 }
 
-func (t *table) portOf(tuple tuple) uint16 {
+func (t *table) findPortByTuple(tuple tuple) uint16 {
 	elm := t.tuples[tuple]
 	if elm == nil {
 		return 0

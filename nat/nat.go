@@ -1,21 +1,19 @@
 package nat
 
 import (
-	"encoding/binary"
 	"io"
 	"net"
+	"net/netip"
 
 	"github.com/Kr328/tun2socket/tcpip"
 )
 
 func Start(
 	device io.ReadWriter,
-	network *net.IPNet,
-	portal net.IP,
+	network netip.Prefix,
+	portal netip.Addr,
 ) (*TCP, *UDP, error) {
-	portal = portal.To4()
-	gateway := network.IP.To4()
-	if portal == nil || gateway == nil {
+	if !portal.Is4() || !network.Addr().Is4() {
 		return nil, nil, net.InvalidAddrError("only ipv4 supported")
 	}
 
@@ -35,9 +33,9 @@ func Start(
 		table:    tab,
 	}
 
-	broadcast := net.IP{0, 0, 0, 0}
-	binary.BigEndian.PutUint32(broadcast, binary.BigEndian.Uint32(gateway.To4())|^binary.BigEndian.Uint32(net.IP(network.Mask).To4()))
+	broadcast := tcpip.BroadcastAddr(network)
 
+	gateway := network.Addr()
 	gatewayPort := uint16(listener.Addr().(*net.TCPAddr).Port)
 
 	go func() {
@@ -73,7 +71,7 @@ func Start(
 				continue
 			}
 
-			if !ip.DestinationIP().IsGlobalUnicast() || ip.DestinationIP().Equal(broadcast) {
+			if !ip.DestinationIP().IsGlobalUnicast() || ip.DestinationIP() == broadcast {
 				continue
 			}
 
@@ -84,21 +82,17 @@ func Start(
 					continue
 				}
 
-				if ip.DestinationIP().Equal(portal) {
-					if ip.SourceIP().Equal(gateway) && t.SourcePort() == gatewayPort {
-						tup := tab.tupleOf(t.DestinationPort())
+				if ip.DestinationIP() == portal {
+					if ip.SourceIP() == gateway && t.SourcePort() == gatewayPort {
+						tup := tab.findTupleByPort(t.DestinationPort())
 						if tup == zeroTuple {
 							continue
 						}
 
-						src := net.IP{0, 0, 0, 0}
-						dst := net.IP{0, 0, 0, 0}
-						binary.LittleEndian.PutUint32(src, tup.SourceIP)
-						binary.LittleEndian.PutUint32(dst, tup.DestinationIP)
-						ip.SetSourceIP(dst)
-						ip.SetDestinationIP(src)
-						t.SetDestinationPort(tup.SourcePort)
-						t.SetSourcePort(tup.DestinationPort)
+						ip.SetSourceIP(tup.to.Addr())
+						t.SetSourcePort(tup.to.Port())
+						ip.SetDestinationIP(tup.from.Addr())
+						t.SetDestinationPort(tup.from.Port())
 
 						ip.ResetChecksum()
 						t.ResetChecksum(ip.PseudoSum())
@@ -107,13 +101,11 @@ func Start(
 					}
 				} else {
 					tup := tuple{
-						SourceIP:        binary.LittleEndian.Uint32(ip.SourceIP()),
-						DestinationIP:   binary.LittleEndian.Uint32(ip.DestinationIP()),
-						SourcePort:      t.SourcePort(),
-						DestinationPort: t.DestinationPort(),
+						from: netip.AddrPortFrom(ip.SourceIP(), t.SourcePort()),
+						to:   netip.AddrPortFrom(ip.DestinationIP(), t.DestinationPort()),
 					}
 
-					port := tab.portOf(tup)
+					port := tab.findPortByTuple(tup)
 					if port == 0 {
 						if t.Flags() != tcpip.TCPSyn {
 							continue

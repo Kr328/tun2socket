@@ -4,6 +4,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"net/netip"
 	"sync"
 
 	"github.com/Kr328/tun2socket/tcpip"
@@ -69,9 +70,9 @@ func (u *UDP) WriteTo(buf []byte, local net.Addr, remote net.Addr) (int, error) 
 		return 0, net.InvalidAddrError("invalid addr")
 	}
 
-	srcIP := srcAddr.IP.To4()
-	dstIP := dstAddr.IP.To4()
-	if srcIP == nil || dstIP == nil {
+	srcIP, srcOk := netip.AddrFromSlice(srcAddr.IP)
+	dstIP, dstOk := netip.AddrFromSlice(dstAddr.IP)
+	if !srcOk || !dstOk {
 		return 0, net.InvalidAddrError("invalid ip version")
 	}
 
@@ -128,11 +129,11 @@ func (u *UDP) handleUDPPacket(ip tcpip.IPv4Packet, pkt tcpip.UDPPacket) {
 
 	if c != nil {
 		c.source = &net.UDPAddr{
-			IP:   append(net.IP{}, ip.SourceIP()...),
+			IP:   ip.SourceIP().AsSlice(),
 			Port: int(pkt.SourcePort()),
 		}
 		c.destination = &net.UDPAddr{
-			IP:   append(net.IP{}, ip.DestinationIP()...),
+			IP:   ip.DestinationIP().AsSlice(),
 			Port: int(pkt.DestinationPort()),
 		}
 		c.n = copy(c.buf, pkt.Payload())

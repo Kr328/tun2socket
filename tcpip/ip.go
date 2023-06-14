@@ -2,7 +2,7 @@ package tcpip
 
 import (
 	"encoding/binary"
-	"net"
+	"net/netip"
 )
 
 type IPProtocol = byte
@@ -91,26 +91,20 @@ func (p IPv4Packet) SetFlags(flags byte) {
 	p[6] |= flags << 5
 }
 
-func (p IPv4Packet) SourceIP() net.IP {
-	return net.IP{p[12], p[13], p[14], p[15]}
+func (p IPv4Packet) SourceIP() netip.Addr {
+	return netip.AddrFrom4([4]byte(p[12:16]))
 }
 
-func (p IPv4Packet) SetSourceIP(ip net.IP) {
-	ip = ip.To4()
-	if ip != nil {
-		copy(p[12:16], ip)
-	}
+func (p IPv4Packet) SetSourceIP(ip netip.Addr) {
+	copy(p[12:16], ip.Unmap().AsSlice())
 }
 
-func (p IPv4Packet) DestinationIP() net.IP {
-	return net.IP{p[16], p[17], p[18], p[19]}
+func (p IPv4Packet) DestinationIP() netip.Addr {
+	return netip.AddrFrom4([4]byte(p[16:20]))
 }
 
-func (p IPv4Packet) SetDestinationIP(ip net.IP) {
-	ip = ip.To4()
-	if ip != nil {
-		copy(p[16:20], ip)
-	}
+func (p IPv4Packet) SetDestinationIP(ip netip.Addr) {
+	copy(p[16:20], ip.Unmap().AsSlice())
 }
 
 func (p IPv4Packet) Checksum() uint16 {

@@ -1,15 +1,15 @@
 package nat
 
 import (
-	"encoding/binary"
 	"net"
+	"net/netip"
 	"syscall"
 	"time"
 )
 
 type TCP struct {
 	listener *net.TCPListener
-	portal   net.IP
+	portal   netip.Addr
 	table    *table
 }
 
@@ -26,8 +26,8 @@ func (t *TCP) Accept() (net.Conn, error) {
 	}
 
 	addr := c.RemoteAddr().(*net.TCPAddr)
-	tup := t.table.tupleOf(uint16(addr.Port))
-	if !addr.IP.Equal(t.portal) || tup == zeroTuple {
+	tup := t.table.findTupleByPort(uint16(addr.Port))
+	if !addr.IP.Equal(t.portal.AsSlice()) || tup == zeroTuple {
 		_ = c.Close()
 
 		return nil, net.InvalidAddrError("unknown remote addr")
@@ -61,24 +61,16 @@ func (t *TCP) SetDeadline(time time.Time) error {
 }
 
 func (c *Conn) LocalAddr() net.Addr {
-	ip := make(net.IP, 4)
-
-	binary.LittleEndian.PutUint32(ip, c.tuple.SourceIP)
-
 	return &net.TCPAddr{
-		IP:   ip,
-		Port: int(c.tuple.SourcePort),
+		IP:   c.tuple.from.Addr().AsSlice(),
+		Port: int(c.tuple.from.Port()),
 	}
 }
 
 func (c *Conn) RemoteAddr() net.Addr {
-	ip := make(net.IP, 4)
-
-	binary.LittleEndian.PutUint32(ip, c.tuple.DestinationIP)
-
 	return &net.TCPAddr{
-		IP:   ip,
-		Port: int(c.tuple.DestinationPort),
+		IP:   c.tuple.to.Addr().AsSlice(),
+		Port: int(c.tuple.to.Port()),
 	}
 }
 

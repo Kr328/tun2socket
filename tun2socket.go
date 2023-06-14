@@ -2,7 +2,7 @@ package tun2socket
 
 import (
 	"io"
-	"net"
+	"net/netip"
 
 	"github.com/Kr328/tun2socket/nat"
 )
@@ -13,9 +13,9 @@ type Tun2Socket struct {
 	udp    *nat.UDP
 }
 
-//noinspection GoUnusedExportedFunction
-func StartTun2Socket(device io.ReadWriteCloser, gateway *net.IPNet, portal net.IP) (*Tun2Socket, error) {
-	tcp, udp, err := nat.Start(device, gateway, portal)
+// noinspection GoUnusedExportedFunction
+func StartTun2Socket(device io.ReadWriteCloser, address netip.Prefix, portal netip.Addr) (*Tun2Socket, error) {
+	tcp, udp, err := nat.Start(device, address, portal)
 	if err != nil {
 		return nil, err
 	}
