@@ -3,8 +3,9 @@ package nat
 import (
 	"net"
 	"net/netip"
-	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type TCP struct {
@@ -38,7 +39,7 @@ func (t *TCP) Accept() (net.Conn, error) {
 	sys, err := c.SyscallConn()
 	if err == nil {
 		_ = sys.Control(func(fd uintptr) {
-			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_NO_CHECK, 1)
+			_ = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_NO_CHECK, 1)
 		})
 	}
 
